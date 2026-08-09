@@ -1,0 +1,22 @@
+# Build output
+dist/
+CreamyKeys-portable.zip
+*.pdb
+
+# QA screenshots and local captures
+qa-*.png
+
+# Local/editor files
+.vs/
+*.user
+*.suo
+*.tmp
+*.log
+
+# .NET scratch output
+bin/
+obj/
+
+# Windows/OneDrive noise
+Thumbs.db
+Desktop.ini

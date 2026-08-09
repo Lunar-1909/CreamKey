@@ -1,0 +1,36 @@
+{
+  "ConfigVersion": 5,
+  "Enabled": true,
+  "KeyboardSoundsEnabled": true,
+  "Preset": "cherrymx_blue_abs",
+  "KeyboardLayout": "full",
+  "MouseStyle": "gaming",
+  "Volume": 70,
+  "KeyGainPercent": 180,
+  "RandomVolumePercent": 12,
+  "RandomPitchPercent": 4,
+  "CooldownMs": 0,
+  "MaxVoices": 24,
+  "PlayOnRepeat": false,
+  "PlayModifiers": false,
+  "IgnoreInjectedInput": true,
+  "RunAtStartup": true,
+  "MouseSoundsEnabled": true,
+  "ShowMouse": true,
+  "EditMode": false,
+  "AutoDetectDevices": true,
+  "UseAppAllowList": false,
+  "AllowedProcesses": [
+    "explorer.exe",
+    "chrome.exe"
+  ],
+  "ExcludedProcesses": [
+    "obs64.exe",
+    "discord.exe"
+  ],
+  "VirtualShadowEnabled": true,
+  "VirtualShadowDepth": 18,
+  "VirtualShadowOffsetX": 6,
+  "VirtualShadowOffsetY": 8,
+  "ButtonOverrides": {}
+}
