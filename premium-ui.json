@@ -1,0 +1,21 @@
+{
+  "profile": "product-admin",
+  "sourceRoots": ["src"],
+  "locale": "en-US",
+  "canonicalMap": "UX-CONTRACT.md",
+  "requiredCapabilities": ["Select/Listbox", "Form", "Status feedback", "Navigation"],
+  "ownership": {
+    "Select/Listbox": "native",
+    "Form": "authored",
+    "Status feedback": "authored",
+    "Navigation": "authored"
+  },
+  "requiredCommands": ["build", "smoke"],
+  "commands": {
+    "build": "powershell -ExecutionPolicy Bypass -File ./build.ps1 -SkipAssets",
+    "smoke": "./dist/CreamyKeys.exe --smoke-test"
+  },
+  "evidence": {
+    "failurePaths": "UX-CONTRACT.md"
+  }
+}

@@ -9,7 +9,9 @@ $root = (Resolve-Path -LiteralPath $PSScriptRoot).Path
 $assets = Join-Path $root "assets"
 $dist = Join-Path $root "dist"
 $obj = Join-Path ([System.IO.Path]::GetTempPath()) "CreamyKeysDesktop-build"
-$src = Join-Path $root "src\CreamyKeysDesktop.cs"
+$sources = Get-ChildItem -LiteralPath (Join-Path $root "src") -Filter "*.cs" -File |
+    Sort-Object Name |
+    ForEach-Object { $_.FullName }
 $manifest = Join-Path $root "app.manifest"
 $pngIcon = Join-Path $root "app-icon.png"
 $icon = Join-Path $root "app.ico"
@@ -102,7 +104,7 @@ if (Test-Path -LiteralPath $oldExe) {
     /reference:System.Management.dll `
     /reference:System.Web.Extensions.dll `
     /reference:System.Windows.Forms.dll `
-    $src
+    $sources
 
 if ($LASTEXITCODE -ne 0) {
     throw "Compiler failed with exit code $LASTEXITCODE"
@@ -112,14 +114,13 @@ Copy-Item -LiteralPath $intermediateExe -Destination $exe -Force
 Copy-Item -LiteralPath $icon -Destination (Join-Path $dist "app.ico") -Force
 Copy-Item -LiteralPath $pngIcon -Destination (Join-Path $dist "app-icon.png") -Force
 
-if (-not $SkipAssets) {
-    $distAssets = Join-Path $dist "assets"
-    if (Test-Path -LiteralPath $distAssets) {
-        Write-Host "Updating existing dist assets in place."
-    }
-    Copy-Item -LiteralPath $assets -Destination $dist -Recurse -Force
-} else {
-    Write-Host "Skipped asset copy."
+$distAssets = Join-Path $dist "assets"
+if (Test-Path -LiteralPath $distAssets) {
+    Write-Host "Updating existing dist assets in place."
+}
+Copy-Item -LiteralPath $assets -Destination $dist -Recurse -Force
+if ($SkipAssets) {
+    Write-Host "Skipped jar extraction and copied the existing asset library."
 }
 
 Write-Host "Built $exe"

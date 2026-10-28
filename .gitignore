@@ -2,9 +2,12 @@
 dist/
 CreamyKeys-portable.zip
 *.pdb
+.release-staging/
 
 # QA screenshots and local captures
 qa-*.png
+docs/qa/
+trailer/.hyperframes/
 
 # Local/editor files
 .vs/
@@ -12,6 +15,7 @@ qa-*.png
 *.suo
 *.tmp
 *.log
+.tools/
 
 # .NET scratch output
 bin/

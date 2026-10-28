@@ -10,6 +10,7 @@ import soundfile as sf
 
 
 KEYBOARD_PREFIX = "assets/creamykeys/sounds/keyboards/"
+BUNDLED_PREFIX = "assets/creamykeys/bundled_keyboards/"
 MOUSE_SOUND_MAP = {
     "mouse_left.wav": "assets/creamykeys/bundled_keyboards/hit7/corsair_lmb_down.ogg",
     "mouse_right.wav": "assets/creamykeys/bundled_keyboards/hit7/corsair_lmb_down.ogg",
@@ -74,6 +75,22 @@ def prepare_assets(jar_path, output_root, clean):
 
             preset, file_name = parts
             output_name = Path(file_name).with_suffix(".wav").name
+            output_path = keyboard_root / preset / output_name
+            if convert_entry(zip_file, name, output_path, skip_existing=skip_existing):
+                converted += 1
+            presets.add(preset)
+
+        for name in zip_file.namelist():
+            if not name.startswith(BUNDLED_PREFIX) or not name.endswith(".ogg"):
+                continue
+
+            relative = name[len(BUNDLED_PREFIX) :]
+            parts = relative.split("/")
+            if len(parts) < 2:
+                continue
+
+            preset = parts[0]
+            output_name = Path("_".join(parts[1:])).with_suffix(".wav").name
             output_path = keyboard_root / preset / output_name
             if convert_entry(zip_file, name, output_path, skip_existing=skip_existing):
                 converted += 1

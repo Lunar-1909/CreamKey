@@ -8,6 +8,7 @@ using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Management;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
@@ -27,6 +28,13 @@ namespace CreamyKeysDesktop
                 Environment.ExitCode = SmokeTest.Run();
                 return;
             }
+            if (HasArgument(args, "--capture-ui"))
+            {
+                Application.EnableVisualStyles();
+                Application.SetCompatibleTextRenderingDefault(false);
+                Environment.ExitCode = CaptureUi(args);
+                return;
+            }
 
             bool created;
             using (Mutex mutex = new Mutex(true, "CreamyKeysDesktop.SingleInstance.4ECED3E4", out created))
@@ -42,7 +50,7 @@ namespace CreamyKeysDesktop
                 Application.SetCompatibleTextRenderingDefault(false);
                 try
                 {
-                    Application.Run(new MainForm());
+                    Application.Run(new CreamyKeysApplicationContext());
                 }
                 catch (Exception ex)
                 {
@@ -84,6 +92,133 @@ namespace CreamyKeysDesktop
 
             return false;
         }
+
+        private static int CaptureUi(string[] args)
+        {
+            try
+            {
+                int marker = Array.FindIndex(args, delegate(string value)
+                {
+                    return string.Equals(value, "--capture-ui", StringComparison.OrdinalIgnoreCase);
+                });
+                string path = marker >= 0 && marker + 1 < args.Length
+                    ? args[marker + 1]
+                    : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "ui-capture.png");
+                int width = marker >= 0 && marker + 2 < args.Length ? ParseDimension(args[marker + 2], 1280) : 1280;
+                int height = marker >= 0 && marker + 3 < args.Length ? ParseDimension(args[marker + 3], 820) : 820;
+                int page = marker >= 0 && marker + 4 < args.Length ? ParsePage(args[marker + 4]) : 0;
+
+                using (MainForm form = new MainForm(true))
+                {
+                    form.StartPosition = FormStartPosition.Manual;
+                    form.Location = new Point(-20000, -20000);
+                    form.ClientSize = new Size(width, height);
+                    form.Show();
+                    Application.DoEvents();
+
+                    if (page == 4)
+                    {
+                        using (WelcomeForm welcome = new WelcomeForm(form.Icon, delegate { }))
+                        {
+                            welcome.StartPosition = FormStartPosition.Manual;
+                            welcome.Location = new Point(-18000, -18000);
+                            welcome.Show(form);
+                            Application.DoEvents();
+                            Thread.Sleep(120);
+                            CaptureControl(welcome, path);
+                            welcome.Close();
+                        }
+                        form.Hide();
+                        return 0;
+                    }
+
+                    if (page == 5)
+                    {
+                        Action noop = delegate { };
+                        using (TrayMenuForm tray = new TrayMenuForm(
+                            form.Icon, true, true, false, true, true, 82, 180,
+                            "Cherry MX Black ABS (40)", noop, noop, noop, noop, noop,
+                            noop, noop, noop, noop, noop))
+                        {
+                            tray.Location = new Point(-18000, -18000);
+                            tray.Show();
+                            Application.DoEvents();
+                            Thread.Sleep(120);
+                            CaptureControl(tray, path);
+                            tray.Close();
+                        }
+                        form.Hide();
+                        return 0;
+                    }
+
+                    if (page == 6)
+                    {
+                        using (UserGuideForm guide = new UserGuideForm(form.Icon))
+                        {
+                            guide.StartPosition = FormStartPosition.Manual;
+                            guide.Location = new Point(-18000, -18000);
+                            guide.Show(form);
+                            Application.DoEvents();
+                            Thread.Sleep(120);
+                            CaptureControl(guide, path);
+                            guide.Close();
+                        }
+                        form.Hide();
+                        return 0;
+                    }
+
+                    form.SelectPageForCapture(page);
+                    Thread.Sleep(220);
+                    Application.DoEvents();
+                    CaptureControl(form, path);
+                    form.Hide();
+                }
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                WriteCrashLog(ex);
+                try
+                {
+                    File.WriteAllText(Path.Combine(Path.GetTempPath(), "CreamyKeys-capture-error.log"),
+                        ex.ToString(), Encoding.UTF8);
+                }
+                catch
+                {
+                }
+                return 7;
+            }
+        }
+
+        private static int ParseDimension(string value, int fallback)
+        {
+            int parsed;
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
+                ? Math.Max(480, parsed)
+                : fallback;
+        }
+
+        private static int ParsePage(string value)
+        {
+            int parsed;
+            return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
+                ? Math.Max(0, Math.Min(6, parsed))
+                : 0;
+        }
+
+        private static void CaptureControl(Control control, string path)
+        {
+            using (Bitmap bitmap = new Bitmap(control.Width, control.Height))
+            {
+                control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, bitmap.Size));
+                string directory = Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+            }
+        }
     }
 
     internal static class SmokeTest
@@ -105,8 +240,19 @@ namespace CreamyKeysDesktop
                 }
 
                 AppConfig config = AppConfig.Defaults(presets[0].Id);
+                PresetInfo mousePreset = presets[0];
+                for (int i = 0; i < presets.Count; i++)
+                {
+                    if (string.Equals(presets[i].Id, "cherrymx_blue_abs_2", StringComparison.OrdinalIgnoreCase))
+                    {
+                        mousePreset = presets[i];
+                        break;
+                    }
+                }
+                config.MousePreset = mousePreset.Id;
                 audio.Configure(config);
                 audio.LoadPreset(presets[0].DirectoryPath);
+                audio.LoadMousePreset(mousePreset.DirectoryPath);
                 if (audio.SampleCount == 0)
                 {
                     return 4;
@@ -116,8 +262,45 @@ namespace CreamyKeysDesktop
                 {
                     return 5;
                 }
+                if (!audio.PlayRandomMouse())
+                {
+                    return 6;
+                }
 
                 Thread.Sleep(250);
+            }
+
+            string roundTripPath = Path.Combine(Path.GetTempPath(), "creamykeys-smoke-settings.json");
+            try
+            {
+                ConfigStore store = new ConfigStore();
+                AppConfig exported = AppConfig.Defaults(presets[0].Id);
+                exported.MouseVolume = 73;
+                exported.ReducedMotion = true;
+                store.SaveToPath(exported, roundTripPath);
+                AppConfig imported = store.LoadFromPath(roundTripPath, presets[0].Id);
+                if (imported.ConfigVersion != AppConfig.CurrentVersion ||
+                    imported.MouseVolume != 73 || !imported.ReducedMotion)
+                {
+                    return 7;
+                }
+            }
+            catch
+            {
+                return 8;
+            }
+            finally
+            {
+                try
+                {
+                    if (File.Exists(roundTripPath))
+                    {
+                        File.Delete(roundTripPath);
+                    }
+                }
+                catch
+                {
+                }
             }
 
             return 0;
@@ -144,14 +327,20 @@ namespace CreamyKeysDesktop
 
     public sealed class AppConfig
     {
+        public const int CurrentVersion = 8;
+
         public int ConfigVersion { get; set; }
         public bool Enabled { get; set; }
         public bool KeyboardSoundsEnabled { get; set; }
         public string Preset { get; set; }
+        public string MousePreset { get; set; }
         public string KeyboardLayout { get; set; }
         public string MouseStyle { get; set; }
         public int Volume { get; set; }
+        public int MouseVolume { get; set; }
         public int KeyGainPercent { get; set; }
+        public int KeyboardLayers { get; set; }
+        public int MouseLayers { get; set; }
         public int RandomVolumePercent { get; set; }
         public int RandomPitchPercent { get; set; }
         public int CooldownMs { get; set; }
@@ -172,6 +361,9 @@ namespace CreamyKeysDesktop
         public int VirtualShadowOffsetX { get; set; }
         public int VirtualShadowOffsetY { get; set; }
         public Dictionary<string, VirtualButtonConfig> ButtonOverrides { get; set; }
+        public bool ReducedMotion { get; set; }
+        public bool HasCompletedWelcome { get; set; }
+        public bool ShowWelcomeOnStartup { get; set; }
 
         public AppConfig()
         {
@@ -183,16 +375,20 @@ namespace CreamyKeysDesktop
         public static AppConfig Defaults(string fallbackPreset)
         {
             AppConfig config = new AppConfig();
-            config.ConfigVersion = 5;
+            config.ConfigVersion = CurrentVersion;
             config.Enabled = true;
             config.KeyboardSoundsEnabled = true;
             config.Preset = fallbackPreset;
+            config.MousePreset = "cherrymx_blue_abs_2";
             config.KeyboardLayout = "full";
             config.MouseStyle = "gaming";
             config.Volume = 70;
+            config.MouseVolume = 82;
             config.KeyGainPercent = 180;
-            config.RandomVolumePercent = 12;
-            config.RandomPitchPercent = 4;
+            config.KeyboardLayers = 1;
+            config.MouseLayers = 1;
+            config.RandomVolumePercent = 14;
+            config.RandomPitchPercent = 7;
             config.CooldownMs = 0;
             config.MaxVoices = 24;
             config.PlayOnRepeat = false;
@@ -208,6 +404,9 @@ namespace CreamyKeysDesktop
             config.VirtualShadowDepth = 18;
             config.VirtualShadowOffsetX = 6;
             config.VirtualShadowOffsetY = 8;
+            config.ReducedMotion = false;
+            config.HasCompletedWelcome = false;
+            config.ShowWelcomeOnStartup = true;
             return config;
         }
 
@@ -238,11 +437,31 @@ namespace CreamyKeysDesktop
                 VirtualShadowOffsetX = 6;
                 VirtualShadowOffsetY = 8;
             }
-            ConfigVersion = 5;
+            if (ConfigVersion < 6)
+            {
+                MousePreset = "cherrymx_blue_abs_2";
+                KeyboardLayers = 1;
+                MouseLayers = 1;
+            }
+            if (ConfigVersion < 7)
+            {
+                MouseVolume = 82;
+                ReducedMotion = false;
+                HasCompletedWelcome = false;
+            }
+            if (ConfigVersion < 8)
+            {
+                ShowWelcomeOnStartup = !HasCompletedWelcome;
+            }
+            ConfigVersion = CurrentVersion;
 
             if (string.IsNullOrWhiteSpace(Preset))
             {
                 Preset = fallbackPreset;
+            }
+            if (string.IsNullOrWhiteSpace(MousePreset))
+            {
+                MousePreset = "cherrymx_blue_abs_2";
             }
             if (string.IsNullOrWhiteSpace(KeyboardLayout))
             {
@@ -254,11 +473,22 @@ namespace CreamyKeysDesktop
             }
 
             Volume = Clamp(Volume, 0, 100);
+            MouseVolume = Clamp(MouseVolume, 0, 100);
             if (KeyGainPercent <= 0)
             {
                 KeyGainPercent = 180;
             }
             KeyGainPercent = Clamp(KeyGainPercent, 50, 400);
+            if (KeyboardLayers <= 0)
+            {
+                KeyboardLayers = 1;
+            }
+            if (MouseLayers <= 0)
+            {
+                MouseLayers = 1;
+            }
+            KeyboardLayers = Clamp(KeyboardLayers, 1, 16);
+            MouseLayers = Clamp(MouseLayers, 1, 16);
             RandomVolumePercent = Clamp(RandomVolumePercent, 0, 50);
             RandomPitchPercent = Clamp(RandomPitchPercent, 0, 20);
             CooldownMs = Clamp(CooldownMs, 0, 80);
@@ -292,6 +522,340 @@ namespace CreamyKeysDesktop
                 return max;
             }
             return value;
+        }
+    }
+
+    internal sealed class InstalledAppInfo
+    {
+        public string DisplayName;
+        public string ProcessName;
+        public string ExecutablePath;
+
+        public override string ToString()
+        {
+            return string.IsNullOrWhiteSpace(DisplayName) ? ProcessName : DisplayName;
+        }
+    }
+
+    internal static class InstalledAppScanner
+    {
+        public static List<InstalledAppInfo> Scan()
+        {
+            Dictionary<string, InstalledAppInfo> apps =
+                new Dictionary<string, InstalledAppInfo>(StringComparer.OrdinalIgnoreCase);
+
+            ScanRegistryHive(apps, RegistryHive.CurrentUser, RegistryView.Registry64);
+            ScanRegistryHive(apps, RegistryHive.CurrentUser, RegistryView.Registry32);
+            ScanRegistryHive(apps, RegistryHive.LocalMachine, RegistryView.Registry64);
+            ScanRegistryHive(apps, RegistryHive.LocalMachine, RegistryView.Registry32);
+            ScanStartMenu(apps, Environment.GetFolderPath(Environment.SpecialFolder.StartMenu));
+            ScanStartMenu(apps, Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu));
+            ScanRunningApps(apps);
+            ApplyPackageDisplayNames(apps);
+
+            List<InstalledAppInfo> result = new List<InstalledAppInfo>(apps.Values);
+            result.Sort(delegate(InstalledAppInfo left, InstalledAppInfo right)
+            {
+                return string.Compare(left.ToString(), right.ToString(), StringComparison.CurrentCultureIgnoreCase);
+            });
+            return result;
+        }
+
+        private static void ScanRegistryHive(Dictionary<string, InstalledAppInfo> apps,
+            RegistryHive hive, RegistryView view)
+        {
+            try
+            {
+                using (RegistryKey root = RegistryKey.OpenBaseKey(hive, view))
+                {
+                    ScanAppPaths(apps, root);
+                    ScanUninstall(apps, root, @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall");
+                    ScanUninstall(apps, root, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall");
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void ScanAppPaths(Dictionary<string, InstalledAppInfo> apps, RegistryKey root)
+        {
+            using (RegistryKey key = root.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths"))
+            {
+                if (key == null)
+                {
+                    return;
+                }
+                foreach (string subKeyName in key.GetSubKeyNames())
+                {
+                    try
+                    {
+                        using (RegistryKey item = key.OpenSubKey(subKeyName))
+                        {
+                            string path = item == null ? "" : Convert.ToString(item.GetValue(null), CultureInfo.InvariantCulture);
+                            Add(apps, FriendlyName(subKeyName, path), path);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void ScanUninstall(Dictionary<string, InstalledAppInfo> apps, RegistryKey root, string keyPath)
+        {
+            using (RegistryKey key = root.OpenSubKey(keyPath))
+            {
+                if (key == null)
+                {
+                    return;
+                }
+                foreach (string subKeyName in key.GetSubKeyNames())
+                {
+                    try
+                    {
+                        using (RegistryKey item = key.OpenSubKey(subKeyName))
+                        {
+                            if (item == null)
+                            {
+                                continue;
+                            }
+                            string displayName = Convert.ToString(item.GetValue("DisplayName"), CultureInfo.InvariantCulture);
+                            string displayIcon = Convert.ToString(item.GetValue("DisplayIcon"), CultureInfo.InvariantCulture);
+                            Add(apps, displayName, displayIcon);
+                        }
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void ScanStartMenu(Dictionary<string, InstalledAppInfo> apps, string directory)
+        {
+            if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+            {
+                return;
+            }
+
+            string[] shortcuts;
+            try
+            {
+                shortcuts = Directory.GetFiles(directory, "*.lnk", SearchOption.AllDirectories);
+            }
+            catch
+            {
+                return;
+            }
+
+            for (int i = 0; i < shortcuts.Length; i++)
+            {
+                string target = ReadShortcutTarget(shortcuts[i]);
+                Add(apps, Path.GetFileNameWithoutExtension(shortcuts[i]), target);
+            }
+        }
+
+        private static string ReadShortcutTarget(string shortcutPath)
+        {
+            object shell = null;
+            object shortcut = null;
+            try
+            {
+                Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+                if (shellType == null)
+                {
+                    return "";
+                }
+                shell = Activator.CreateInstance(shellType);
+                shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod,
+                    null, shell, new object[] { shortcutPath }, CultureInfo.InvariantCulture);
+                if (shortcut == null)
+                {
+                    return "";
+                }
+                return Convert.ToString(shortcut.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty,
+                    null, shortcut, null, CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return "";
+            }
+            finally
+            {
+                if (shortcut != null && Marshal.IsComObject(shortcut))
+                {
+                    Marshal.FinalReleaseComObject(shortcut);
+                }
+                if (shell != null && Marshal.IsComObject(shell))
+                {
+                    Marshal.FinalReleaseComObject(shell);
+                }
+            }
+        }
+
+        private static void ScanRunningApps(Dictionary<string, InstalledAppInfo> apps)
+        {
+            Process[] processes;
+            try
+            {
+                processes = Process.GetProcesses();
+            }
+            catch
+            {
+                return;
+            }
+
+            for (int i = 0; i < processes.Length; i++)
+            {
+                using (Process process = processes[i])
+                {
+                    try
+                    {
+                        if (process.MainWindowHandle == IntPtr.Zero)
+                        {
+                            continue;
+                        }
+                        string path = process.MainModule.FileName;
+                        Add(apps, FriendlyName(process.ProcessName, path), path);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+        }
+
+        private static void ApplyPackageDisplayNames(Dictionary<string, InstalledAppInfo> apps)
+        {
+            const string packagesPath = @"Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\AppModel\Repository\Packages";
+            try
+            {
+                using (RegistryKey packages = Registry.CurrentUser.OpenSubKey(packagesPath))
+                {
+                    if (packages == null)
+                    {
+                        return;
+                    }
+                    foreach (string packageName in packages.GetSubKeyNames())
+                    {
+                        using (RegistryKey package = packages.OpenSubKey(packageName))
+                        {
+                            if (package == null)
+                            {
+                                continue;
+                            }
+                            string root = Convert.ToString(package.GetValue("PackageRootFolder"), CultureInfo.InvariantCulture);
+                            string display = Convert.ToString(package.GetValue("DisplayName"), CultureInfo.InvariantCulture);
+                            if (string.IsNullOrWhiteSpace(root) || string.IsNullOrWhiteSpace(display) ||
+                                display.StartsWith("@{", StringComparison.Ordinal))
+                            {
+                                continue;
+                            }
+                            foreach (InstalledAppInfo app in apps.Values)
+                            {
+                                if (!string.IsNullOrWhiteSpace(app.ExecutablePath) &&
+                                    app.ExecutablePath.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    app.DisplayName = display;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        private static void Add(Dictionary<string, InstalledAppInfo> apps, string displayName, string rawPath)
+        {
+            string path = CleanExecutablePath(rawPath);
+            if (path.Length == 0)
+            {
+                return;
+            }
+            string processName;
+            try
+            {
+                processName = Path.GetFileName(path);
+            }
+            catch
+            {
+                return;
+            }
+            if (string.IsNullOrWhiteSpace(processName) ||
+                !processName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            string name = string.IsNullOrWhiteSpace(displayName)
+                ? Path.GetFileNameWithoutExtension(processName)
+                : displayName.Trim();
+            InstalledAppInfo existing;
+            if (apps.TryGetValue(processName, out existing))
+            {
+                string generic = Path.GetFileNameWithoutExtension(existing.ProcessName);
+                if (string.Equals(existing.DisplayName, generic, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(name, generic, StringComparison.OrdinalIgnoreCase))
+                {
+                    existing.DisplayName = name;
+                }
+                if (string.IsNullOrWhiteSpace(existing.ExecutablePath) && File.Exists(path))
+                {
+                    existing.ExecutablePath = path;
+                }
+                return;
+            }
+
+            InstalledAppInfo app = new InstalledAppInfo();
+            app.DisplayName = name;
+            app.ProcessName = processName;
+            app.ExecutablePath = path;
+            apps.Add(processName, app);
+        }
+
+        private static string FriendlyName(string fallback, string path)
+        {
+            string cleanPath = CleanExecutablePath(path);
+            if (cleanPath.Length > 0)
+            {
+                try
+                {
+                    FileVersionInfo version = FileVersionInfo.GetVersionInfo(cleanPath);
+                    if (!string.IsNullOrWhiteSpace(version.ProductName))
+                    {
+                        return version.ProductName.Trim();
+                    }
+                    if (!string.IsNullOrWhiteSpace(version.FileDescription))
+                    {
+                        return version.FileDescription.Trim();
+                    }
+                }
+                catch
+                {
+                }
+            }
+            return Path.GetFileNameWithoutExtension(fallback ?? "Application");
+        }
+
+        private static string CleanExecutablePath(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "";
+            }
+            string expanded = Environment.ExpandEnvironmentVariables(value.Trim().TrimStart('@'));
+            int exeIndex = expanded.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
+            if (exeIndex < 0)
+            {
+                return "";
+            }
+            string path = expanded.Substring(0, exeIndex + 4).Trim().Trim('"');
+            return File.Exists(path) ? path : "";
         }
     }
 
@@ -347,6 +911,40 @@ namespace CreamyKeysDesktop
             Directory.CreateDirectory(ConfigDirectory);
             string json = _serializer.Serialize(config);
             File.WriteAllText(_path, json, Encoding.UTF8);
+        }
+
+        public AppConfig LoadFromPath(string path, string fallbackPreset)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                throw new FileNotFoundException("The settings file could not be found.", path);
+            }
+
+            string json = File.ReadAllText(path, Encoding.UTF8);
+            AppConfig config = _serializer.Deserialize<AppConfig>(json);
+            if (config == null)
+            {
+                throw new InvalidDataException("The settings file does not contain a valid CreamyKeys configuration.");
+            }
+
+            config.Normalize(fallbackPreset);
+            return config;
+        }
+
+        public void SaveToPath(AppConfig config, string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                throw new ArgumentException("A destination path is required.", "path");
+            }
+
+            config.Normalize(config.Preset);
+            string directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+            File.WriteAllText(path, _serializer.Serialize(config), Encoding.UTF8);
         }
     }
 
@@ -678,6 +1276,13 @@ namespace CreamyKeysDesktop
         private readonly Dictionary<string, WavSample> _customSamples;
         private readonly Random _random;
         private List<WavSample> _samples;
+        private List<WavSample> _mouseSamples;
+        private List<int> _keyboardShuffle;
+        private List<int> _mouseShuffle;
+        private int _keyboardShuffleCursor;
+        private int _mouseShuffleCursor;
+        private int _lastKeyboardIndex;
+        private int _lastMouseIndex;
         private List<Voice> _voices;
         private IntPtr _waveOut;
         private AutoResetEvent _bufferEvent;
@@ -687,6 +1292,7 @@ namespace CreamyKeysDesktop
         private volatile bool _audioReady;
         private volatile bool _enabled;
         private float _masterVolume;
+        private float _mouseVolumeMultiplier;
         private int _randomVolumePercent;
         private int _randomPitchPercent;
         private int _maxVoices;
@@ -699,9 +1305,17 @@ namespace CreamyKeysDesktop
             _customSamples = new Dictionary<string, WavSample>(StringComparer.OrdinalIgnoreCase);
             _random = new Random();
             _samples = new List<WavSample>();
+            _mouseSamples = new List<WavSample>();
+            _keyboardShuffle = new List<int>();
+            _mouseShuffle = new List<int>();
+            _keyboardShuffleCursor = 0;
+            _mouseShuffleCursor = 0;
+            _lastKeyboardIndex = -1;
+            _lastMouseIndex = -1;
             _voices = new List<Voice>();
             _enabled = true;
             _masterVolume = 0.7f;
+            _mouseVolumeMultiplier = 0.82f;
             _randomVolumePercent = 12;
             _randomPitchPercent = 4;
             _maxVoices = 24;
@@ -735,6 +1349,7 @@ namespace CreamyKeysDesktop
             float outputVolume = config.Volume / 100.0f;
             float keyGain = config.KeyGainPercent / 100.0f;
             _masterVolume = Math.Max(0.0f, Math.Min(4.0f, outputVolume * keyGain));
+            _mouseVolumeMultiplier = Math.Max(0.0f, Math.Min(1.0f, config.MouseVolume / 100.0f));
             _randomVolumePercent = Math.Max(0, Math.Min(50, config.RandomVolumePercent));
             _randomPitchPercent = Math.Max(0, Math.Min(20, config.RandomPitchPercent));
             _maxVoices = Math.Max(4, Math.Min(64, config.MaxVoices));
@@ -764,6 +1379,7 @@ namespace CreamyKeysDesktop
             lock (_sampleLock)
             {
                 _samples = loaded;
+                ResetShuffle(_samples.Count, _keyboardShuffle, ref _keyboardShuffleCursor, ref _lastKeyboardIndex);
             }
 
             lock (_voiceLock)
@@ -774,6 +1390,39 @@ namespace CreamyKeysDesktop
 
         public bool PlayRandom()
         {
+            return PlayRandomFrom(_samples, _keyboardShuffle, ref _keyboardShuffleCursor,
+                ref _lastKeyboardIndex, 1.0f);
+        }
+
+        public void LoadMousePreset(string directoryPath)
+        {
+            List<WavSample> loaded = new List<WavSample>();
+            if (Directory.Exists(directoryPath))
+            {
+                string[] files = Directory.GetFiles(directoryPath, "*.wav");
+                Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+                for (int i = 0; i < files.Length; i++)
+                {
+                    loaded.Add(WavLoader.Load(files[i]));
+                }
+            }
+
+            lock (_sampleLock)
+            {
+                _mouseSamples = loaded;
+                ResetShuffle(_mouseSamples.Count, _mouseShuffle, ref _mouseShuffleCursor, ref _lastMouseIndex);
+            }
+        }
+
+        public bool PlayRandomMouse()
+        {
+            return PlayRandomFrom(_mouseSamples, _mouseShuffle, ref _mouseShuffleCursor,
+                ref _lastMouseIndex, _mouseVolumeMultiplier);
+        }
+
+        private bool PlayRandomFrom(List<WavSample> samples, List<int> shuffle, ref int cursor,
+            ref int lastIndex, float gain)
+        {
             if (!_enabled || !_audioReady)
             {
                 return false;
@@ -782,14 +1431,43 @@ namespace CreamyKeysDesktop
             WavSample sample;
             lock (_sampleLock)
             {
-                if (_samples.Count == 0)
+                if (samples == null || samples.Count == 0)
                 {
                     return false;
                 }
-                sample = _samples[_random.Next(_samples.Count)];
+                if (shuffle == null || shuffle.Count != samples.Count || cursor >= shuffle.Count)
+                {
+                    ResetShuffle(samples.Count, shuffle, ref cursor, ref lastIndex);
+                }
+                int index = shuffle[cursor++];
+                lastIndex = index;
+                sample = samples[index];
             }
 
-            return PlaySample(sample, true);
+            return PlaySample(sample, true, gain);
+        }
+
+        private void ResetShuffle(int count, List<int> shuffle, ref int cursor, ref int lastIndex)
+        {
+            shuffle.Clear();
+            for (int i = 0; i < count; i++)
+            {
+                shuffle.Add(i);
+            }
+            for (int i = shuffle.Count - 1; i > 0; i--)
+            {
+                int swap = _random.Next(i + 1);
+                int value = shuffle[i];
+                shuffle[i] = shuffle[swap];
+                shuffle[swap] = value;
+            }
+            if (shuffle.Count > 1 && shuffle[0] == lastIndex)
+            {
+                int value = shuffle[0];
+                shuffle[0] = shuffle[1];
+                shuffle[1] = value;
+            }
+            cursor = 0;
         }
 
         public bool PlaySoundPath(string path)
@@ -819,12 +1497,17 @@ namespace CreamyKeysDesktop
 
         private bool PlaySample(WavSample sample, bool allowJitter)
         {
+            return PlaySample(sample, allowJitter, 1.0f);
+        }
+
+        private bool PlaySample(WavSample sample, bool allowJitter, float gain)
+        {
             if (sample == null)
             {
                 return false;
             }
 
-            float volume = _masterVolume;
+            float volume = _masterVolume * Math.Max(0.0f, Math.Min(1.0f, gain));
             if (allowJitter && _randomVolumePercent > 0)
             {
                 double spread = _randomVolumePercent / 100.0;
@@ -1874,44 +2557,6 @@ namespace CreamyKeysDesktop
                 CenterKeyboardButtonsInArea(content, false);
             }
 
-            ApplyVirtualDeviceNudge();
-        }
-
-        private void ApplyVirtualDeviceNudge()
-        {
-            if (_buttons.Count == 0)
-            {
-                return;
-            }
-
-            Rectangle bounds = _buttons[0].Bounds;
-            for (int i = 1; i < _buttons.Count; i++)
-            {
-                bounds = Rectangle.Union(bounds, _buttons[i].Bounds);
-            }
-
-            int dx = -Math.Max(66, Math.Min(108, Width / 18));
-            int dy = -Math.Max(38, Math.Min(104, Height / 8));
-            int minimumTop = 58;
-            if (bounds.Top + dy < minimumTop)
-            {
-                dy = minimumTop - bounds.Top;
-            }
-
-            if (dx == 0 && dy == 0)
-            {
-                return;
-            }
-
-            for (int i = 0; i < _buttons.Count; i++)
-            {
-                VirtualButtonDefinition button = _buttons[i];
-                button.Bounds = new Rectangle(
-                    button.Bounds.X + dx,
-                    button.Bounds.Y + dy,
-                    button.Bounds.Width,
-                    button.Bounds.Height);
-            }
         }
 
         private void CenterKeyboardButtonsInArea(Rectangle area, bool moveMouseWithKeyboard)
@@ -1964,6 +2609,29 @@ namespace CreamyKeysDesktop
             }
         }
 
+        private void CenterAllButtonsInArea(Rectangle area)
+        {
+            if (_buttons.Count == 0)
+            {
+                return;
+            }
+
+            Rectangle bounds = _buttons[0].Bounds;
+            for (int i = 1; i < _buttons.Count; i++)
+            {
+                bounds = Rectangle.Union(bounds, _buttons[i].Bounds);
+            }
+
+            int dx = area.X + ((area.Width - bounds.Width) / 2) - bounds.X;
+            int dy = area.Y + ((area.Height - bounds.Height) / 2) - bounds.Y;
+            for (int i = 0; i < _buttons.Count; i++)
+            {
+                VirtualButtonDefinition button = _buttons[i];
+                button.Bounds = new Rectangle(button.Bounds.X + dx, button.Bounds.Y + dy,
+                    button.Bounds.Width, button.Bounds.Height);
+            }
+        }
+
         private void LayoutKeyboardAndMouse(Rectangle content)
         {
             List<VirtualButtonDefinition> units = KeyboardUnits(_keyboardLayout);
@@ -1976,18 +2644,17 @@ namespace CreamyKeysDesktop
             Size sideKeyboardSize = KeyboardSize(measure, sideScale);
             int sideMouseHeight = Math.Min(content.Height, Math.Min(280, Math.Max(150, sideKeyboardSize.Height + 32)));
             int sideGroupWidth = sideKeyboardSize.Width + gap + mouseWidth;
-            int centeredKeyboardX = content.X + Math.Max(0, (content.Width - sideKeyboardSize.Width) / 2);
-            bool mouseFitsRight = centeredKeyboardX + sideKeyboardSize.Width + gap + mouseWidth <= content.Right;
-            bool sideBySide = content.Width >= 1180 && content.Height >= 210 &&
+            int groupX = content.X + Math.Max(0, (content.Width - sideGroupWidth) / 2);
+            bool sideBySide = content.Width >= 980 && content.Height >= 210 &&
                 sideKeyboardSize.Width >= 420 && sideKeyboardSize.Height >= 120 &&
-                sideGroupWidth <= content.Width && mouseFitsRight;
+                sideGroupWidth <= content.Width;
 
             if (sideBySide)
             {
                 int groupHeight = Math.Max(sideKeyboardSize.Height, sideMouseHeight);
                 int groupY = AlignedGroupY(content, groupHeight);
                 Rectangle keyboardArea = new Rectangle(
-                    centeredKeyboardX,
+                    groupX,
                     groupY + Math.Max(0, (groupHeight - sideKeyboardSize.Height) / 2),
                     sideKeyboardSize.Width,
                     sideKeyboardSize.Height);
@@ -1998,7 +2665,7 @@ namespace CreamyKeysDesktop
                     sideMouseHeight);
                 BuildKeyboardButtons(units, measure, keyboardArea, sideScale, true);
                 BuildMouseButtons(mouseArea);
-                CenterKeyboardButtonsInArea(content, true);
+                CenterAllButtonsInArea(content);
             }
             else
             {
@@ -2620,11 +3287,11 @@ namespace CreamyKeysDesktop
         {
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
-                ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
+                ControlStyles.Opaque, true);
+            BackColor = UiTheme.ContentElevated;
             Cursor = Cursors.Hand;
             Height = 34;
-            TabStop = false;
+            TabStop = true;
             _maximum = 100;
             _smallChange = 1;
             _largeChange = 5;
@@ -2704,12 +3371,13 @@ namespace CreamyKeysDesktop
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            e.Graphics.Clear(BackColor);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
             int trackY = Height / 2;
-            Rectangle trackRect = new Rectangle(8, trackY - 2, Math.Max(4, Width - 16), 4);
-            using (GraphicsPath trackPath = RoundedRect(trackRect, 3))
-            using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(207, 216, 214)))
+            Rectangle trackRect = new Rectangle(9, trackY - 3, Math.Max(4, Width - 18), 6);
+            using (GraphicsPath trackPath = RoundedRect(trackRect, 4))
+            using (SolidBrush trackBrush = new SolidBrush(UiTheme.ContentBorder))
             {
                 e.Graphics.FillPath(trackBrush, trackPath);
             }
@@ -2718,20 +3386,22 @@ namespace CreamyKeysDesktop
             Rectangle fillRect = new Rectangle(trackRect.X, trackRect.Y, Math.Max(0, thumbX - trackRect.X), trackRect.Height);
             if (fillRect.Width > 0)
             {
-                using (GraphicsPath fillPath = RoundedRect(fillRect, 3))
-                using (SolidBrush fillBrush = new SolidBrush(Color.FromArgb(20, 125, 139)))
+                using (GraphicsPath fillPath = RoundedRect(fillRect, 4))
+                using (SolidBrush fillBrush = new SolidBrush(UiTheme.ActionActive))
                 {
                     e.Graphics.FillPath(fillBrush, fillPath);
                 }
             }
 
-            Rectangle thumb = new Rectangle(thumbX - 7, trackY - 10, 14, 20);
-            using (GraphicsPath thumbPath = RoundedRect(thumb, 7))
-            using (SolidBrush thumbBrush = new SolidBrush(Color.FromArgb(12, 123, 214)))
-            using (Pen thumbBorder = new Pen(Color.FromArgb(238, 246, 248), 1.2f))
+            Rectangle halo = new Rectangle(thumbX - 11, trackY - 11, 22, 22);
+            Rectangle thumb = new Rectangle(thumbX - 7, trackY - 7, 14, 14);
+            using (SolidBrush haloBrush = new SolidBrush(Color.FromArgb(50, UiTheme.Action)))
+            using (SolidBrush thumbBrush = new SolidBrush(UiTheme.Action))
+            using (Pen thumbBorder = new Pen(UiTheme.ContentElevated, 2.0f))
             {
-                e.Graphics.FillPath(thumbBrush, thumbPath);
-                e.Graphics.DrawPath(thumbBorder, thumbPath);
+                e.Graphics.FillEllipse(haloBrush, halo);
+                e.Graphics.FillEllipse(thumbBrush, thumb);
+                e.Graphics.DrawEllipse(thumbBorder, thumb);
             }
         }
 
@@ -2858,52 +3528,48 @@ namespace CreamyKeysDesktop
             ShowInTaskbar = false;
             StartPosition = FormStartPosition.Manual;
             TopMost = true;
-            Opacity = 0.92;
-            BackColor = Color.FromArgb(26, 26, 27);
-            ClientSize = new Size(382, 650);
-            Font = new Font("Segoe UI", 9.0f);
+            Opacity = 0.96;
+            BackColor = UiTheme.Canvas;
+            ClientSize = new Size(356, 618);
+            Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
 
             ModernPanel shell = new ModernPanel();
-            shell.FillColor = Color.FromArgb(36, 37, 38);
-            shell.FillColor2 = Color.FromArgb(17, 18, 19);
-            shell.BorderColor = Color.FromArgb(96, 99, 101);
-            shell.CornerRadius = 18;
+            shell.FillColor = UiTheme.Surface;
+            shell.FillColor2 = Color.Empty;
+            shell.BorderColor = UiTheme.Border;
+            shell.CornerRadius = 16;
             shell.ShadowSize = 0;
             shell.SetBounds(0, 0, ClientSize.Width, ClientSize.Height);
             Controls.Add(shell);
 
-            AddDot(shell, 26, Color.FromArgb(255, 58, 56));
-            AddDot(shell, 48, Color.FromArgb(255, 189, 46));
-            AddDot(shell, 70, Color.FromArgb(39, 201, 63));
-
             PictureBox icon = new PictureBox();
             icon.Image = appIcon != null ? appIcon.ToBitmap() : SystemIcons.Application.ToBitmap();
             icon.SizeMode = PictureBoxSizeMode.StretchImage;
-            icon.SetBounds(28, 62, 50, 50);
+            icon.SetBounds(24, 22, 44, 44);
             shell.Controls.Add(icon);
 
             Label title = new Label();
             title.Text = "CreamyKeys";
             title.AutoSize = false;
-            title.Font = new Font("Segoe UI Semibold", 13.2f);
-            title.ForeColor = Color.White;
+            title.Font = UiTheme.DisplayFont(13.0f, FontStyle.Bold);
+            title.ForeColor = UiTheme.TextPrimary;
             title.TextAlign = ContentAlignment.MiddleLeft;
-            title.SetBounds(92, 55, 250, 42);
+            title.SetBounds(82, 16, 246, 34);
             shell.Controls.Add(title);
 
             Label subtitle = new Label();
-            subtitle.Text = enabled ? "Desktop sound is enabled" : "Desktop sound is disabled";
-            subtitle.ForeColor = Color.FromArgb(196, 199, 198);
+            subtitle.Text = enabled ? "●  Sound engine enabled" : "○  Sound engine disabled";
+            subtitle.ForeColor = enabled ? UiTheme.Action : UiTheme.TextMuted;
             subtitle.TextAlign = ContentAlignment.MiddleLeft;
-            subtitle.SetBounds(94, 92, 270, 30);
+            subtitle.SetBounds(84, 48, 244, 24);
             shell.Controls.Add(subtitle);
 
             Panel line = new Panel();
-            line.BackColor = Color.FromArgb(88, 90, 91);
-            line.SetBounds(28, 134, 326, 1);
+            line.BackColor = UiTheme.Border;
+            line.SetBounds(24, 86, 308, 1);
             shell.Controls.Add(line);
 
-            int y = 142;
+            int y = 98;
             y = AddRow(shell, y, "\u2699", "Settings", "", true, settings);
             y = AddRow(shell, y, "\u23fb", enabled ? "Disable" : "Enable", "", false, toggleEnabled);
             y = AddRow(shell, y, "\u266b", "Test sound", "", false, testSound);
@@ -2939,7 +3605,7 @@ namespace CreamyKeysDesktop
         private int AddRow(Control parent, int y, string icon, string text, string detail, bool active, Action action)
         {
             TrayMenuRow row = new TrayMenuRow(icon, text, detail, active);
-            row.SetBounds(28, y, 326, 32);
+            row.SetBounds(24, y, 308, 32);
             row.Click += delegate
             {
                 Close();
@@ -2955,8 +3621,8 @@ namespace CreamyKeysDesktop
         private static int AddDivider(Control parent, int y)
         {
             Panel line = new Panel();
-            line.BackColor = Color.FromArgb(76, 78, 79);
-            line.SetBounds(28, y + 5, 326, 1);
+            line.BackColor = UiTheme.Border;
+            line.SetBounds(24, y + 5, 308, 1);
             parent.Controls.Add(line);
             return y + 12;
         }
@@ -2979,8 +3645,8 @@ namespace CreamyKeysDesktop
             Cursor = Cursors.Hand;
             SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
-                ControlStyles.SupportsTransparentBackColor, true);
-            BackColor = Color.Transparent;
+                ControlStyles.Opaque, true);
+            BackColor = UiTheme.Surface;
         }
 
         protected override void OnMouseEnter(EventArgs e)
@@ -2999,11 +3665,12 @@ namespace CreamyKeysDesktop
 
         protected override void OnPaint(PaintEventArgs e)
         {
+            e.Graphics.Clear(BackColor);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
             Rectangle bg = new Rectangle(0, 0, Width - 1, Height - 1);
             if (_active || _hover)
             {
-                Color fill = _active ? Color.FromArgb(202, 18, 26) : Color.FromArgb(64, 65, 66);
+                Color fill = _active ? UiTheme.Action : UiTheme.SurfaceElevated;
                 using (GraphicsPath path = RoundedRect(bg, 7))
                 using (SolidBrush brush = new SolidBrush(fill))
                 {
@@ -3011,12 +3678,12 @@ namespace CreamyKeysDesktop
                 }
             }
 
-            Color fore = Color.White;
+            Color fore = _active ? UiTheme.Canvas : UiTheme.TextPrimary;
             TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
 
             Rectangle iconRect = new Rectangle(18, 0, 30, Height);
-            using (Font iconFont = new Font("Segoe UI Symbol", 10.2f))
+            using (Font iconFont = UiTheme.BodyFont(10.2f, FontStyle.Regular))
             {
                 TextRenderer.DrawText(e.Graphics, _icon, iconFont, iconRect, fore,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
@@ -3025,7 +3692,7 @@ namespace CreamyKeysDesktop
             int detailWidth = string.IsNullOrWhiteSpace(_detail) ? 0 :
                 (_detail.EndsWith("%", StringComparison.OrdinalIgnoreCase) ? 76 : 118);
             Rectangle textRect = new Rectangle(60, 0, Width - 84 - detailWidth, Height);
-            using (Font textFont = new Font("Segoe UI", 9.35f))
+            using (Font textFont = UiTheme.BodyFont(9.35f, FontStyle.Regular))
             {
                 TextRenderer.DrawText(e.Graphics, _label, textFont, textRect, fore, flags);
             }
@@ -3033,10 +3700,10 @@ namespace CreamyKeysDesktop
             if (detailWidth > 0)
             {
                 Rectangle detailRect = new Rectangle(Width - detailWidth - 18, 0, detailWidth, Height);
-                using (Font detailFont = new Font("Segoe UI", 9.0f))
+                using (Font detailFont = UiTheme.BodyFont(9.0f, FontStyle.Regular))
                 {
                     TextRenderer.DrawText(e.Graphics, _detail, detailFont, detailRect,
-                        Color.FromArgb(236, 236, 236),
+                        _active ? UiTheme.Canvas : UiTheme.TextMuted,
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
                         TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 }
@@ -3304,13 +3971,19 @@ namespace CreamyKeysDesktop
         private CheckBox _showMouseCheck;
         private CheckBox _editModeCheck;
         private ComboBox _presetCombo;
+        private ComboBox _mousePresetCombo;
         private CheckBox _enabledCheck;
         private CheckBox _keyboardSoundsCheck;
         private CheckBox _playRepeatCheck;
         private CheckBox _playModifiersCheck;
         private CheckBox _ignoreInjectedCheck;
         private CheckBox _runStartupCheck;
+        private CheckBox _reducedMotionCheck;
+        private CheckBox _showWelcomeCheck;
+        private NumericUpDown _keyboardLayersNumber;
+        private NumericUpDown _mouseLayersNumber;
         private CleanTrackBar _volumeTrack;
+        private CleanTrackBar _mouseVolumeTrack;
         private CleanTrackBar _keyGainTrack;
         private CleanTrackBar _randomVolumeTrack;
         private CleanTrackBar _randomPitchTrack;
@@ -3318,13 +3991,20 @@ namespace CreamyKeysDesktop
         private NumericUpDown _maxVoicesNumber;
         private TextBox _excludedBox;
         private CheckBox _appAllowListCheck;
-        private CheckedListBox _allowedAppsList;
+        private ListView _allowedAppsList;
+        private ImageList _allowedAppImages;
+        private TextBox _appSearchBox;
+        private Label _appScanStatus;
+        private List<InstalledAppInfo> _installedApps;
+        private readonly HashSet<string> _allowedSelection =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private TextBox _manualAppBox;
         private CheckBox _shadowEnabledCheck;
         private CleanTrackBar _shadowDepthTrack;
         private CleanTrackBar _shadowXTrack;
         private CleanTrackBar _shadowYTrack;
         private NumericUpDown _volumeLabel;
+        private NumericUpDown _mouseVolumeLabel;
         private NumericUpDown _keyGainLabel;
         private NumericUpDown _randomVolumeLabel;
         private NumericUpDown _randomPitchLabel;
@@ -3343,9 +4023,24 @@ namespace CreamyKeysDesktop
         private List<MenuItem> _trayVolumeItems;
         private List<MenuItem> _trayGainItems;
         private Icon _appIcon;
+        private readonly List<Image> _uiImages = new List<Image>();
+        private HiddenTabControl _pageTabs;
+        private Label _pageTitle;
+        private Label _pageSubtitle;
+        private SoundPulseControl _pulseControl;
+        private Button[] _sidebarNavButtons;
+        private SlidingIndicator _sidebarIndicator;
+        private bool _hasShownWelcome;
+        private readonly bool _suppressWelcome;
 
         public MainForm()
+            : this(false)
         {
+        }
+
+        internal MainForm(bool suppressWelcome)
+        {
+            _suppressWelcome = suppressWelcome;
             _assetsRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets");
             _configStore = new ConfigStore();
             _presets = SoundLibrary.Scan(_assetsRoot);
@@ -3354,6 +4049,10 @@ namespace CreamyKeysDesktop
             if (FindPreset(_config.Preset) == null && fallbackPreset.Length > 0)
             {
                 _config.Preset = fallbackPreset;
+            }
+            if (FindPreset(_config.MousePreset) == null && fallbackPreset.Length > 0)
+            {
+                _config.MousePreset = DefaultMousePresetId(fallbackPreset);
             }
             if (_config.AutoDetectDevices)
             {
@@ -3425,10 +4124,19 @@ namespace CreamyKeysDesktop
                 {
                     _audio.Dispose();
                 }
+                if (_allowedAppImages != null)
+                {
+                    _allowedAppImages.Dispose();
+                }
                 if (_appIcon != null)
                 {
                     _appIcon.Dispose();
                 }
+                for (int i = 0; i < _uiImages.Count; i++)
+                {
+                    _uiImages[i].Dispose();
+                }
+                _uiImages.Clear();
             }
             base.Dispose(disposing);
         }
@@ -3450,7 +4158,431 @@ namespace CreamyKeysDesktop
             Invalidate(true);
         }
 
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            if (!_suppressWelcome && !_hasShownWelcome && _config.ShowWelcomeOnStartup)
+            {
+                _hasShownWelcome = true;
+                BeginInvoke((MethodInvoker)delegate { ShowWelcomeTour(); });
+            }
+        }
+
         private void BuildUi()
+        {
+            _appIcon = LoadAppIcon();
+
+            Text = "CreamyKeys";
+            StartPosition = FormStartPosition.CenterScreen;
+            FormBorderStyle = FormBorderStyle.Sizable;
+            MaximizeBox = true;
+            ClientSize = new Size(1280, 820);
+            MinimumSize = new Size(980, 700);
+            AutoScaleMode = AutoScaleMode.Dpi;
+            Font = UiTheme.BodyFont(9.2f, FontStyle.Regular);
+            BackColor = UiTheme.Canvas;
+            ForeColor = UiTheme.TextPrimary;
+            Icon = _appIcon;
+            DoubleBuffered = true;
+
+            TableLayoutPanel shell = new TableLayoutPanel();
+            shell.Dock = DockStyle.Fill;
+            shell.BackColor = UiTheme.Canvas;
+            shell.Padding = new Padding(16);
+            shell.Margin = Padding.Empty;
+            shell.RowCount = 1;
+            shell.ColumnCount = 5;
+            shell.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
+            shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 58.0f));
+            shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 12.0f));
+            shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 260.0f));
+            shell.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 14.0f));
+            shell.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
+            Controls.Add(shell);
+
+            ModernPanel rail = new ModernPanel();
+            rail.Dock = DockStyle.Fill;
+            rail.Margin = Padding.Empty;
+            rail.FillColor = UiTheme.Surface;
+            rail.BorderColor = UiTheme.Border;
+            rail.CornerRadius = 16;
+            rail.ShadowSize = 0;
+            shell.Controls.Add(rail, 0, 0);
+
+            Label railMark = new Label();
+            railMark.Text = "★";
+            railMark.Font = UiTheme.DisplayFont(19.0f, FontStyle.Regular);
+            railMark.ForeColor = UiTheme.Action;
+            railMark.TextAlign = ContentAlignment.MiddleCenter;
+            railMark.Dock = DockStyle.Top;
+            railMark.Height = 70;
+            rail.Controls.Add(railMark);
+
+            ModernPanel sidebar = new ModernPanel();
+            sidebar.Dock = DockStyle.Fill;
+            sidebar.Margin = Padding.Empty;
+            sidebar.FillColor = UiTheme.Surface;
+            sidebar.BorderColor = UiTheme.Border;
+            sidebar.CornerRadius = 16;
+            sidebar.ShadowSize = 0;
+            shell.Controls.Add(sidebar, 2, 0);
+
+            PictureBox profileIcon = new PictureBox();
+            profileIcon.Image = _appIcon.ToBitmap();
+            profileIcon.SizeMode = PictureBoxSizeMode.StretchImage;
+            profileIcon.SetBounds(22, 24, 44, 44);
+            sidebar.Controls.Add(profileIcon);
+
+            Label profileTitle = new Label();
+            profileTitle.Text = "CreamyKeys";
+            profileTitle.Font = UiTheme.DisplayFont(9.8f, FontStyle.Bold);
+            profileTitle.ForeColor = UiTheme.TextPrimary;
+            profileTitle.SetBounds(78, 22, 146, 27);
+            sidebar.Controls.Add(profileTitle);
+
+            Label profileSub = new Label();
+            profileSub.Text = "Sound studio";
+            profileSub.Font = UiTheme.BodyFont(8.5f, FontStyle.Regular);
+            profileSub.ForeColor = UiTheme.TextMuted;
+            profileSub.SetBounds(79, 49, 140, 24);
+            sidebar.Controls.Add(profileSub);
+
+            Label navigationLabel = CreateSidebarSectionLabel("WORKSPACE", 22, 104);
+            sidebar.Controls.Add(navigationLabel);
+
+            Button navDashboard = AddSidebarButton(sidebar, "Dashboard", 132, true,
+                delegate { NavigateToPage(0); });
+            ApplySidebarIcon(navDashboard, "layout-dashboard");
+            Button navSound = AddSidebarButton(sidebar, "Sound library", 178, false,
+                delegate { NavigateToPage(1); });
+            ApplySidebarIcon(navSound, "volume-2");
+            Button navBehavior = AddSidebarButton(sidebar, "Behavior", 224, false,
+                delegate { NavigateToPage(2); });
+            ApplySidebarIcon(navBehavior, "sliders-horizontal");
+            Button navApps = AddSidebarButton(sidebar, "Allowed apps", 270, false,
+                delegate { NavigateToPage(3); });
+            ApplySidebarIcon(navApps, "panels-top-left");
+            _sidebarNavButtons = new Button[] { navDashboard, navSound, navBehavior, navApps };
+
+            _sidebarIndicator = new SlidingIndicator();
+            _sidebarIndicator.SetBounds(18, navDashboard.Top + 8, 5, 24);
+            sidebar.Controls.Add(_sidebarIndicator);
+            _sidebarIndicator.BringToFront();
+
+            Label toolsLabel = CreateSidebarSectionLabel("TOOLS", 22, 0);
+            toolsLabel.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
+            toolsLabel.Top = sidebar.ClientSize.Height - 262;
+            sidebar.Controls.Add(toolsLabel);
+
+            Button importButton = CreateSidebarButton("Import settings", false);
+            importButton.SetBounds(18, sidebar.ClientSize.Height - 228, 224, 38);
+            importButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            importButton.Click += delegate { ImportSettings(); };
+            ApplySidebarIcon(importButton, "file-input");
+            sidebar.Controls.Add(importButton);
+
+            Button exportButton = CreateSidebarButton("Export settings", false);
+            exportButton.SetBounds(18, sidebar.ClientSize.Height - 184, 224, 38);
+            exportButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            exportButton.Click += delegate { ExportSettings(); };
+            ApplySidebarIcon(exportButton, "file-output");
+            sidebar.Controls.Add(exportButton);
+
+            Button welcomeButton = CreateSidebarButton("Welcome\u00a0pop-up", false);
+            welcomeButton.SetBounds(18, sidebar.ClientSize.Height - 140, 224, 38);
+            welcomeButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            welcomeButton.Click += delegate { ShowWelcomeTour(); };
+            ApplySidebarIcon(welcomeButton, "sparkles");
+            welcomeButton.Font = UiTheme.BodyFont(8.2f, FontStyle.Bold);
+            welcomeButton.Padding = new Padding(6, 0, 4, 0);
+            sidebar.Controls.Add(welcomeButton);
+
+            Button guideButton = CreateSidebarButton("User guide", false);
+            guideButton.SetBounds(18, sidebar.ClientSize.Height - 96, 224, 38);
+            guideButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            guideButton.Click += delegate { ShowUserGuide(); };
+            ApplySidebarIcon(guideButton, "book-open");
+            sidebar.Controls.Add(guideButton);
+
+            ModernPanel content = new ModernPanel();
+            content.Dock = DockStyle.Fill;
+            content.Margin = Padding.Empty;
+            content.FillColor = UiTheme.Content;
+            content.BorderColor = UiTheme.ContentBorder;
+            content.CornerRadius = 16;
+            content.ShadowSize = 0;
+            shell.Controls.Add(content, 4, 0);
+
+            TableLayoutPanel workspace = new TableLayoutPanel();
+            workspace.Dock = DockStyle.Fill;
+            workspace.Margin = Padding.Empty;
+            workspace.Padding = new Padding(14, 10, 14, 10);
+            workspace.BackColor = Color.Transparent;
+            workspace.ColumnCount = 1;
+            workspace.RowCount = 4;
+            workspace.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 82.0f));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 56.0f));
+            workspace.RowStyles.Add(new RowStyle(SizeType.Absolute, 34.0f));
+            content.Controls.Add(workspace);
+
+            Panel header = new Panel();
+            header.Dock = DockStyle.Fill;
+            header.Margin = Padding.Empty;
+            header.BackColor = Color.Transparent;
+            workspace.Controls.Add(header, 0, 0);
+
+            _pageTitle = new Label();
+            _pageTitle.Text = "Dashboard";
+            _pageTitle.AutoSize = false;
+            _pageTitle.Font = UiTheme.DisplayFont(18.0f, FontStyle.Bold);
+            _pageTitle.ForeColor = UiTheme.Ink;
+            _pageTitle.SetBounds(8, 0, 560, 48);
+            header.Controls.Add(_pageTitle);
+
+            _pageSubtitle = new Label();
+            _pageSubtitle.Text = PageSubtitleForIndex(0);
+            _pageSubtitle.ForeColor = UiTheme.InkMuted;
+            _pageSubtitle.SetBounds(10, 48, 680, 26);
+            _pageSubtitle.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+            header.Controls.Add(_pageSubtitle);
+
+            Label liveBadge = new Label();
+            liveBadge.Text = "●  LIVE";
+            liveBadge.Font = UiTheme.BodyFont(8.0f, FontStyle.Bold);
+            liveBadge.ForeColor = UiTheme.ActionActive;
+            liveBadge.TextAlign = ContentAlignment.MiddleCenter;
+            liveBadge.SetBounds(0, 12, 84, 28);
+            liveBadge.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            header.Controls.Add(liveBadge);
+            EventHandler arrangeHeader = delegate { liveBadge.Left = Math.Max(0, header.ClientSize.Width - 92); };
+            header.Resize += arrangeHeader;
+
+            _pageTabs = new HiddenTabControl();
+            _pageTabs.Dock = DockStyle.Fill;
+            _pageTabs.Margin = Padding.Empty;
+            _pageTabs.Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
+            _pageTabs.DrawMode = TabDrawMode.OwnerDrawFixed;
+            _pageTabs.SizeMode = TabSizeMode.Fixed;
+            _pageTabs.Padding = new Point(0, 0);
+            _pageTabs.ItemSize = new Size(1, 1);
+            _pageTabs.DrawItem += DrawWideTab;
+            workspace.Controls.Add(_pageTabs, 0, 1);
+
+            TabPage devicePage = CreateTabPage("Devices");
+            TabPage soundPage = CreateTabPage("Sound");
+            TabPage behaviorPage = CreateTabPage("Behavior");
+            TabPage appsPage = CreateTabPage("Apps");
+            _pageTabs.TabPages.Add(devicePage);
+            _pageTabs.TabPages.Add(soundPage);
+            _pageTabs.TabPages.Add(behaviorPage);
+            _pageTabs.TabPages.Add(appsPage);
+
+            BuildDashboardPage(devicePage);
+            BuildSoundPage(soundPage);
+            BuildBehaviorPage(behaviorPage);
+            BuildAppsPage(appsPage);
+
+            Panel actions = new Panel();
+            actions.Dock = DockStyle.Fill;
+            actions.Margin = new Padding(0, 8, 0, 0);
+            actions.BackColor = UiTheme.Surface;
+            workspace.Controls.Add(actions, 0, 2);
+
+            Button testButton = CreateButton("Test sound", false);
+            testButton.SetBounds(10, 7, 126, 38);
+            testButton.Click += delegate { PlayTestSound(); };
+            actions.Controls.Add(testButton);
+
+            Button saveButton = CreateButton("Save settings", true);
+            saveButton.SetBounds(144, 7, 146, 38);
+            saveButton.Click += delegate { SaveConfig(); };
+            actions.Controls.Add(saveButton);
+
+            Button openConfigButton = CreateButton("Config folder", false);
+            openConfigButton.SetBounds(298, 7, 154, 38);
+            openConfigButton.Click += delegate { Process.Start(_configStore.ConfigDirectory); };
+            actions.Controls.Add(openConfigButton);
+
+            _adminButton = CreateButton("Run as admin", false);
+            _adminButton.SetBounds(460, 7, 154, 38);
+            _adminButton.Click += delegate { RelaunchAsAdmin(); };
+            actions.Controls.Add(_adminButton);
+
+            Button hideButton = CreateButton("Hide", false);
+            hideButton.SetBounds(0, 7, 76, 38);
+            hideButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            hideButton.Click += delegate { Hide(); };
+            actions.Controls.Add(hideButton);
+
+            Button exitButton = CreateButton("Exit", false);
+            if (exitButton is ThemeButton)
+            {
+                ((ThemeButton)exitButton).Danger = true;
+            }
+            exitButton.SetBounds(0, 7, 76, 38);
+            exitButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+            exitButton.Click += delegate { ExitApplication(); };
+            actions.Controls.Add(exitButton);
+            EventHandler arrangeActions = delegate
+            {
+                bool compact = actions.ClientSize.Width < 760;
+                openConfigButton.Visible = !compact;
+                _adminButton.Visible = !compact;
+                exitButton.Left = Math.Max(0, actions.ClientSize.Width - 86);
+                hideButton.Left = Math.Max(0, exitButton.Left - 84);
+            };
+            actions.Resize += arrangeActions;
+            Shown += delegate
+            {
+                arrangeHeader(header, EventArgs.Empty);
+                arrangeActions(actions, EventArgs.Empty);
+            };
+
+            Panel statusPanel = new Panel();
+            statusPanel.Dock = DockStyle.Fill;
+            statusPanel.Margin = Padding.Empty;
+            statusPanel.BackColor = UiTheme.Content;
+            workspace.Controls.Add(statusPanel, 0, 3);
+
+            _statusLabel = new Label();
+            _statusLabel.AutoEllipsis = true;
+            _statusLabel.Dock = DockStyle.Fill;
+            _statusLabel.ForeColor = UiTheme.InkMuted;
+            _statusLabel.Padding = new Padding(8, 7, 8, 0);
+            statusPanel.Controls.Add(_statusLabel);
+        }
+
+        private void BuildDashboardPage(TabPage devicePage)
+        {
+            TableLayoutPanel layout = new TableLayoutPanel();
+            layout.Dock = DockStyle.Fill;
+            layout.Margin = Padding.Empty;
+            layout.Padding = new Padding(6);
+            layout.BackColor = UiTheme.ContentElevated;
+            layout.ColumnCount = 1;
+            layout.RowCount = 2;
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 126.0f));
+            layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
+            devicePage.Controls.Add(layout);
+
+            ModernPanel deviceCard = new ModernPanel();
+            deviceCard.Dock = DockStyle.Fill;
+            deviceCard.Margin = Padding.Empty;
+            deviceCard.FillColor = UiTheme.Surface;
+            deviceCard.BorderColor = UiTheme.Border;
+            deviceCard.CornerRadius = 12;
+            deviceCard.ShadowSize = 0;
+            layout.Controls.Add(deviceCard, 0, 0);
+
+            Label deviceTitle = CreateDarkLabel("Virtual devices", 22, 18, 220, 28);
+            deviceTitle.Font = UiTheme.DisplayFont(11.0f, FontStyle.Bold);
+            deviceCard.Controls.Add(deviceTitle);
+
+            Label deviceSub = CreateDarkLabel("Separate packs for keyboard and mouse", 22, 45, 300, 24);
+            deviceSub.Font = UiTheme.BodyFont(8.2f, FontStyle.Regular);
+            deviceSub.ForeColor = UiTheme.TextMuted;
+            deviceCard.Controls.Add(deviceSub);
+
+            _pulseControl = new SoundPulseControl();
+            _pulseControl.SetBounds(22, 76, 286, 36);
+            deviceCard.Controls.Add(_pulseControl);
+
+            Label layoutLabel = CreateDarkLabel("Keyboard", 332, 18, 96, 26);
+            deviceCard.Controls.Add(layoutLabel);
+            _keyboardLayoutCombo = CreateDeviceCombo();
+            _keyboardLayoutCombo.Items.Add(new ComboItem("full", "Full size"));
+            _keyboardLayoutCombo.Items.Add(new ComboItem("tkl", "TKL"));
+            _keyboardLayoutCombo.Items.Add(new ComboItem("60", "60%"));
+            _keyboardLayoutCombo.Items.Add(new ComboItem("laptop", "Laptop"));
+            _keyboardLayoutCombo.SelectedIndexChanged += delegate { OnSettingChanged(false); };
+            deviceCard.Controls.Add(_keyboardLayoutCombo);
+
+            Label mouseLabel = CreateDarkLabel("Mouse", 332, 55, 84, 26);
+            deviceCard.Controls.Add(mouseLabel);
+            _mouseStyleCombo = CreateDeviceCombo();
+            _mouseStyleCombo.Items.Add(new ComboItem("gaming", "Gaming"));
+            _mouseStyleCombo.Items.Add(new ComboItem("office", "Office"));
+            _mouseStyleCombo.Items.Add(new ComboItem("compact", "Compact"));
+            _mouseStyleCombo.SelectedIndexChanged += delegate { OnSettingChanged(false); };
+            deviceCard.Controls.Add(_mouseStyleCombo);
+
+            _editModeCheck = CreateDarkCheck("Edit", 0, 16);
+            _editModeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            deviceCard.Controls.Add(_editModeCheck);
+
+            _autoDetectCheck = CreateDarkCheck("Auto detect", 0, 53);
+            _autoDetectCheck.CheckedChanged += delegate { OnAutoDetectChanged(); };
+            deviceCard.Controls.Add(_autoDetectCheck);
+
+            _detectButton = CreateButton("Detect", false);
+            _detectButton.Click += delegate { DetectDevicesNow(); };
+            deviceCard.Controls.Add(_detectButton);
+
+            EventHandler arrangeCard = delegate
+            {
+                int width = deviceCard.ClientSize.Width;
+                bool compact = width < 760;
+                int controlsX = compact ? Math.Max(294, width - 278) : Math.Max(318, width - 478);
+                int comboX = controlsX + (compact ? 108 : 100);
+                layoutLabel.Left = controlsX;
+                mouseLabel.Left = controlsX;
+                layoutLabel.Width = compact ? 104 : 96;
+                mouseLabel.Width = compact ? 104 : 96;
+                _keyboardLayoutCombo.SetBounds(comboX, 16, 112, 30);
+                _mouseStyleCombo.SetBounds(comboX, 53, 112, 30);
+                _editModeCheck.Text = compact ? "" : "Edit";
+                _autoDetectCheck.Text = compact ? "" : "Auto detect";
+                _editModeCheck.SetBounds(comboX + 128, 14, compact ? 40 : 190, 32);
+                _autoDetectCheck.SetBounds(comboX + 128, 51, compact ? 40 : 190, 32);
+                _detectButton.SetBounds(Math.Max(12, width - 102), 84, 82, 34);
+                int waveWidth = Math.Max(130, Math.Min(286, controlsX - 42));
+                _pulseControl.Width = waveWidth;
+            };
+            deviceCard.Resize += arrangeCard;
+            arrangeCard(deviceCard, EventArgs.Empty);
+
+            _deviceView = new VirtualDeviceControl();
+            _deviceView.Dock = DockStyle.Fill;
+            _deviceView.Margin = new Padding(0, 8, 0, 0);
+            _deviceView.ButtonActivated += OnVirtualButtonActivated;
+            _deviceView.ButtonCustomizationChanged += OnDeviceCustomizationChanged;
+            layout.Controls.Add(_deviceView, 0, 1);
+        }
+
+        private static ComboBox CreateDeviceCombo()
+        {
+            ComboBox combo = new ComboBox();
+            combo.DropDownStyle = ComboBoxStyle.DropDownList;
+            combo.FlatStyle = FlatStyle.Flat;
+            combo.Font = UiTheme.BodyFont(8.8f, FontStyle.Regular);
+            return combo;
+        }
+
+        internal void SelectPageForCapture(int index)
+        {
+            if (_pageTabs == null || index < 0 || index >= _pageTabs.TabPages.Count)
+            {
+                return;
+            }
+            if (_pageTabs.SelectedIndex != index)
+            {
+                NavigateToPage(index);
+                Stopwatch animation = Stopwatch.StartNew();
+                while (animation.ElapsedMilliseconds < 320)
+                {
+                    Application.DoEvents();
+                    Thread.Sleep(16);
+                }
+            }
+            PerformLayout();
+            Invalidate(true);
+            Update();
+        }
+
+        private void BuildLegacyUi()
         {
             _appIcon = LoadAppIcon();
 
@@ -3487,7 +4619,7 @@ namespace CreamyKeysDesktop
             rail.Controls.Add(railLogo);
 
             RailCreditLabel railCredit = new RailCreditLabel();
-            railCredit.Text = "Author: NTGH | Idea: CreamyKeys mod - Minecraft";
+            railCredit.Text = "CreamyKeys desktop sound studio";
             railCredit.SetBounds(12, 92, 52, 618);
             railCredit.Anchor = AnchorStyles.Left | AnchorStyles.Top | AnchorStyles.Bottom;
             rail.Controls.Add(railCredit);
@@ -3800,8 +4932,9 @@ namespace CreamyKeysDesktop
 
         private void BuildSoundPage(TabPage soundPage)
         {
-            ModernPanel card = CreateInnerCard(18, 20, 620, 468);
-            card.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            soundPage.Padding = new Padding(8);
+            ModernPanel card = CreateInnerCard(0, 0, 620, 548);
+            card.Dock = DockStyle.Fill;
             soundPage.Controls.Add(card);
 
             Label title = CreateCardTitle("Sound", 24, 18, 220, 30);
@@ -3811,19 +4944,19 @@ namespace CreamyKeysDesktop
             _enabledCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_enabledCheck);
 
-            _keyboardSoundsCheck = CreateLightCheck("Keyboard sound", 210, 64);
+            _keyboardSoundsCheck = CreateLightCheck("Keyboard sound", 242, 64);
             _keyboardSoundsCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_keyboardSoundsCheck);
 
-            _mouseSoundsCheck = CreateLightCheck("Mouse sound", 410, 64);
+            _mouseSoundsCheck = CreateLightCheck("Mouse sound", 28, 102);
             _mouseSoundsCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_mouseSoundsCheck);
 
-            _showMouseCheck = CreateLightCheck("Show virtual mouse", 28, 102);
+            _showMouseCheck = CreateLightCheck("Show virtual mouse", 242, 102);
             _showMouseCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_showMouseCheck);
 
-            Label presetLabel = CreateLabel("Preset", 28, 152, 140, 26);
+            Label presetLabel = CreateLabel("Keyboard preset", 28, 152, 146, 26);
             card.Controls.Add(presetLabel);
 
             _presetCombo = new ComboBox();
@@ -3838,18 +4971,41 @@ namespace CreamyKeysDesktop
             reloadButton.Click += delegate { ReloadPresets(); };
             card.Controls.Add(reloadButton);
 
-            AddSoundSlider(card, "Output volume", 204, out _volumeTrack, out _volumeLabel, 0, 100);
-            AddSoundSlider(card, "Key boost", 262, out _keyGainTrack, out _keyGainLabel, 50, 400);
+            Label mousePresetLabel = CreateLabel("Mouse preset", 28, 194, 146, 26);
+            card.Controls.Add(mousePresetLabel);
+
+            _mousePresetCombo = new ComboBox();
+            _mousePresetCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            _mousePresetCombo.FlatStyle = FlatStyle.Flat;
+            _mousePresetCombo.SetBounds(180, 190, 310, 30);
+            _mousePresetCombo.SelectedIndexChanged += delegate { OnSettingChanged(true); };
+            card.Controls.Add(_mousePresetCombo);
+
+            AddSoundSlider(card, "Keyboard volume", 246, out _volumeTrack, out _volumeLabel, 0, 100);
+            AddSoundSlider(card, "Mouse volume", 304, out _mouseVolumeTrack, out _mouseVolumeLabel, 0, 100);
+            AddSoundSlider(card, "Key boost", 362, out _keyGainTrack, out _keyGainLabel, 50, 400);
             _keyGainTrack.TickFrequency = 50;
             _keyGainTrack.LargeChange = 25;
-            AddSoundSlider(card, "Volume jitter", 320, out _randomVolumeTrack, out _randomVolumeLabel, 0, 50);
-            AddSoundSlider(card, "Pitch jitter", 378, out _randomPitchTrack, out _randomPitchLabel, 0, 20);
+            AddSoundSlider(card, "Volume variation", 420, out _randomVolumeTrack, out _randomVolumeLabel, 0, 50);
+            AddSoundSlider(card, "Pitch variation", 478, out _randomPitchTrack, out _randomPitchLabel, 0, 20);
+
+            EventHandler arrange = delegate
+            {
+                int reloadX = Math.Max(440, card.ClientSize.Width - 114);
+                reloadButton.Left = reloadX;
+                int comboWidth = Math.Max(180, reloadX - _presetCombo.Left - 14);
+                _presetCombo.Width = comboWidth;
+                _mousePresetCombo.Width = comboWidth;
+            };
+            card.Resize += arrange;
+            arrange(card, EventArgs.Empty);
         }
 
         private void BuildBehaviorPage(TabPage behaviorPage)
         {
-            ModernPanel behavior = CreateInnerCard(18, 20, 620, 210);
-            behavior.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            behaviorPage.Padding = new Padding(8);
+            ModernPanel behavior = CreateInnerCard(8, 8, 620, 288);
+            behavior.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             behaviorPage.Controls.Add(behavior);
 
             Label title = CreateCardTitle("Behavior", 24, 18, 220, 30);
@@ -3888,8 +5044,30 @@ namespace CreamyKeysDesktop
             _maxVoicesNumber.ValueChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_maxVoicesNumber);
 
-            ModernPanel shadow = CreateInnerCard(18, 250, 620, 230);
-            shadow.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            Label keyboardLayersLabel = CreateLabel("Key layers", 28, 202, 120, 26);
+            behavior.Controls.Add(keyboardLayersLabel);
+
+            _keyboardLayersNumber = CreateNumberBox(150, 198, 88, 1, 16);
+            _keyboardLayersNumber.ValueChanged += delegate { OnSettingChanged(false); };
+            behavior.Controls.Add(_keyboardLayersNumber);
+
+            Label mouseLayersLabel = CreateLabel("Mouse layers", 322, 202, 140, 26);
+            behavior.Controls.Add(mouseLayersLabel);
+
+            _mouseLayersNumber = CreateNumberBox(470, 198, 88, 1, 16);
+            _mouseLayersNumber.ValueChanged += delegate { OnSettingChanged(false); };
+            behavior.Controls.Add(_mouseLayersNumber);
+
+            _reducedMotionCheck = CreateLightCheck("Reduce animations", 322, 242);
+            _reducedMotionCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            behavior.Controls.Add(_reducedMotionCheck);
+
+            _showWelcomeCheck = CreateLightCheck("Show welcome pop-up", 28, 242);
+            _showWelcomeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            behavior.Controls.Add(_showWelcomeCheck);
+
+            ModernPanel shadow = CreateInnerCard(8, 310, 620, 230);
+            shadow.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             behaviorPage.Controls.Add(shadow);
 
             Label shadowTitle = CreateCardTitle("Virtual device shadow", 24, 18, 260, 30);
@@ -3902,18 +5080,29 @@ namespace CreamyKeysDesktop
             AddShadowSlider(shadow, "Depth", 98, out _shadowDepthTrack, out _shadowDepthLabel, 0, 48);
             AddShadowSlider(shadow, "Direction X", 134, out _shadowXTrack, out _shadowXLabel, -32, 32);
             AddShadowSlider(shadow, "Direction Y", 170, out _shadowYTrack, out _shadowYLabel, -32, 32);
+
+            EventHandler arrange = delegate
+            {
+                int width = Math.Max(420, behaviorPage.ClientSize.Width - 16);
+                behavior.SetBounds(8, 8, width, 288);
+                shadow.SetBounds(8, 310, width, Math.Max(220, behaviorPage.ClientSize.Height - 318));
+            };
+            behaviorPage.Resize += arrange;
+            arrange(behaviorPage, EventArgs.Empty);
         }
 
         private void BuildAppsPage(TabPage appsPage)
         {
-            ModernPanel card = CreateInnerCard(18, 20, 620, 430);
-            card.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            appsPage.Padding = new Padding(8);
+            ModernPanel card = CreateInnerCard(0, 0, 620, 430);
+            card.Dock = DockStyle.Fill;
             appsPage.Controls.Add(card);
 
             Label title = CreateCardTitle("Allowed apps", 24, 18, 240, 30);
             card.Controls.Add(title);
 
             Label hint = CreateMutedLabel("Checked apps can play CreamyKeys sounds. Empty boxes stay silent when the allow list is on.", 26, 48, 560, 38);
+            hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
             card.Controls.Add(hint);
 
             _appAllowListCheck = CreateLightCheck("Use app allow list", 28, 88);
@@ -3924,31 +5113,67 @@ namespace CreamyKeysDesktop
             };
             card.Controls.Add(_appAllowListCheck);
 
-            Button refreshButton = CreateButton("Refresh", false);
-            refreshButton.SetBounds(402, 86, 86, 32);
+            Button refreshButton = CreateButton("Scan", false);
+            refreshButton.SetBounds(388, 86, 100, 34);
             refreshButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
-            refreshButton.Click += delegate { PopulateAllowedAppList(); };
+            refreshButton.Click += delegate { RefreshInstalledApps(true); };
             card.Controls.Add(refreshButton);
 
-            Button currentButton = CreateButton("Add current", false);
-            currentButton.SetBounds(498, 86, 98, 32);
+            Button currentButton = CreateButton("Current", false);
+            currentButton.SetBounds(498, 86, 98, 34);
             currentButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             currentButton.Click += delegate { AddCurrentForegroundApp(); };
             card.Controls.Add(currentButton);
 
-            _allowedAppsList = new CheckedListBox();
-            _allowedAppsList.CheckOnClick = true;
+            _appSearchBox = new TextBox();
+            _appSearchBox.BorderStyle = BorderStyle.FixedSingle;
+            _appSearchBox.Font = UiTheme.BodyFont(9.2f, FontStyle.Regular);
+            _appSearchBox.SetBounds(28, 132, 568, 32);
+            _appSearchBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            _appSearchBox.TextChanged += delegate { RenderAllowedApps(); };
+            card.Controls.Add(_appSearchBox);
+
+            _appScanStatus = CreateMutedLabel("Installed apps and running windows", 28, 166, 420, 24);
+            _appScanStatus.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            card.Controls.Add(_appScanStatus);
+
+            _allowedAppImages = new ImageList();
+            _allowedAppImages.ColorDepth = ColorDepth.Depth32Bit;
+            _allowedAppImages.ImageSize = new Size(28, 28);
+            _allowedAppImages.Images.Add("default", _appIcon.ToBitmap());
+
+            _allowedAppsList = new ListView();
+            _allowedAppsList.CheckBoxes = true;
+            _allowedAppsList.View = View.Details;
+            _allowedAppsList.FullRowSelect = true;
+            _allowedAppsList.HideSelection = false;
             _allowedAppsList.BorderStyle = BorderStyle.None;
             _allowedAppsList.BackColor = Color.FromArgb(244, 247, 246);
             _allowedAppsList.ForeColor = Color.FromArgb(33, 40, 42);
-            _allowedAppsList.Font = new Font("Segoe UI", 9.0f);
-            _allowedAppsList.SetBounds(28, 132, 568, 210);
+            _allowedAppsList.Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
+            _allowedAppsList.SmallImageList = _allowedAppImages;
+            _allowedAppsList.Columns.Add("Application", 360);
+            _allowedAppsList.Columns.Add("Process", 180);
+            _allowedAppsList.SetBounds(28, 194, 568, 148);
             _allowedAppsList.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-            _allowedAppsList.ItemCheck += delegate
+            _allowedAppsList.ItemChecked += delegate(object sender, ItemCheckedEventArgs e)
             {
-                if (!_loadingControls && IsHandleCreated)
+                if (!_loadingControls)
                 {
-                    BeginInvoke((MethodInvoker)delegate { OnSettingChanged(false); });
+                    InstalledAppInfo app = e.Item.Tag as InstalledAppInfo;
+                    string processName = app == null ? "" : NormalizeProcessName(app.ProcessName);
+                    if (processName.Length > 0)
+                    {
+                        if (e.Item.Checked)
+                        {
+                            _allowedSelection.Add(processName);
+                        }
+                        else
+                        {
+                            _allowedSelection.Remove(processName);
+                        }
+                    }
+                    OnSettingChanged(false);
                 }
             };
             card.Controls.Add(_allowedAppsList);
@@ -3959,7 +5184,7 @@ namespace CreamyKeysDesktop
             _manualAppBox.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             card.Controls.Add(_manualAppBox);
 
-            Button addManual = CreateButton("Add .exe", true);
+            Button addManual = CreateButton("Add app", true);
             addManual.SetBounds(426, 362, 96, 34);
             addManual.Anchor = AnchorStyles.Right | AnchorStyles.Bottom;
             addManual.Click += delegate { AddManualAllowedApp(); };
@@ -3972,14 +5197,39 @@ namespace CreamyKeysDesktop
             {
                 if (_allowedAppsList != null)
                 {
-                    for (int i = 0; i < _allowedAppsList.Items.Count; i++)
-                    {
-                        _allowedAppsList.SetItemChecked(i, false);
-                    }
+                    _allowedSelection.Clear();
+                    RenderAllowedApps();
                     OnSettingChanged(false);
                 }
             };
             card.Controls.Add(clearApps);
+            refreshButton.BringToFront();
+            currentButton.BringToFront();
+
+            EventHandler arrangeList = delegate
+            {
+                int cardWidth = Math.Max(500, card.ClientSize.Width);
+                int cardHeight = Math.Max(430, card.ClientSize.Height);
+                currentButton.SetBounds(cardWidth - 122, 86, 98, 34);
+                refreshButton.SetBounds(cardWidth - 232, 86, 100, 34);
+                _appSearchBox.SetBounds(28, 132, cardWidth - 56, 32);
+                _appScanStatus.SetBounds(28, 166, cardWidth - 56, 24);
+
+                int bottomY = cardHeight - 66;
+                _manualAppBox.SetBounds(28, bottomY + 2, cardWidth - 240, 30);
+                addManual.SetBounds(cardWidth - 194, bottomY, 96, 34);
+                clearApps.SetBounds(cardWidth - 88, bottomY, 64, 34);
+                _allowedAppsList.SetBounds(28, 194, cardWidth - 56,
+                    Math.Max(130, bottomY - 206));
+
+                int available = Math.Max(360, _allowedAppsList.ClientSize.Width - 6);
+                int processWidth = Math.Max(150, (int)Math.Round(available * 0.32f));
+                _allowedAppsList.Columns[0].Width = Math.Max(190, available - processWidth);
+                _allowedAppsList.Columns[1].Width = processWidth;
+            };
+            card.Resize += arrangeList;
+            _allowedAppsList.Resize += arrangeList;
+            arrangeList(card, EventArgs.Empty);
 
             _excludedBox = new TextBox();
             _excludedBox.Visible = false;
@@ -3989,13 +5239,11 @@ namespace CreamyKeysDesktop
         private static ModernPanel CreateInnerCard(int x, int y, int width, int height)
         {
             ModernPanel card = new ModernPanel();
-            card.FillColor = Color.FromArgb(238, 241, 240);
-            card.FillColor2 = Color.FromArgb(230, 234, 232);
-            card.BorderColor = Color.FromArgb(222, 228, 226);
-            card.CornerRadius = 18;
-            card.ShadowSize = 3;
-            card.ShadowOffsetX = 2;
-            card.ShadowOffsetY = 5;
+            card.FillColor = UiTheme.ContentElevated;
+            card.FillColor2 = Color.Empty;
+            card.BorderColor = UiTheme.ContentBorder;
+            card.CornerRadius = 10;
+            card.ShadowSize = 0;
             card.SetBounds(x, y, width, height);
             return card;
         }
@@ -4006,8 +5254,8 @@ namespace CreamyKeysDesktop
             label.Text = text;
             label.AutoSize = false;
             label.AutoEllipsis = false;
-            label.Font = new Font("Segoe UI Semibold", 11.2f);
-            label.ForeColor = Color.FromArgb(28, 34, 36);
+            label.Font = UiTheme.DisplayFont(11.2f, FontStyle.Bold);
+            label.ForeColor = UiTheme.Ink;
             label.TextAlign = ContentAlignment.MiddleLeft;
             label.Padding = new Padding(0, 2, 0, 0);
             label.SetBounds(x, y, width, Math.Max(40, height + 10));
@@ -4020,8 +5268,8 @@ namespace CreamyKeysDesktop
             label.Text = text;
             label.AutoSize = false;
             label.AutoEllipsis = false;
-            label.Font = new Font("Segoe UI", 9.4f);
-            label.ForeColor = Color.FromArgb(226, 230, 229);
+            label.Font = UiTheme.BodyFont(9.1f, FontStyle.Regular);
+            label.ForeColor = UiTheme.TextPrimary;
             label.BackColor = Color.Transparent;
             label.Padding = new Padding(6, 0, 0, 0);
             label.TextAlign = ContentAlignment.MiddleLeft;
@@ -4031,22 +5279,20 @@ namespace CreamyKeysDesktop
 
         private static CheckBox CreateDarkCheck(string text, int x, int y)
         {
-            CheckBox check = new CheckBox();
+            ThemeToggle check = new ThemeToggle();
             check.Text = text;
-            check.AutoSize = true;
-            check.ForeColor = Color.FromArgb(235, 239, 238);
-            check.BackColor = Color.Transparent;
+            check.DarkSurface = true;
+            check.SetBounds(x, y, 154, 32);
             check.Location = new Point(x, y);
             return check;
         }
 
         private static CheckBox CreateLightCheck(string text, int x, int y)
         {
-            CheckBox check = new CheckBox();
+            ThemeToggle check = new ThemeToggle();
             check.Text = text;
-            check.AutoSize = true;
-            check.ForeColor = Color.FromArgb(35, 43, 45);
-            check.BackColor = Color.Transparent;
+            check.DarkSurface = false;
+            check.SetBounds(x, y, 260, 32);
             check.Location = new Point(x, y);
             return check;
         }
@@ -4068,7 +5314,7 @@ namespace CreamyKeysDesktop
         private Button AddSidebarButton(Control parent, string text, int y, bool selected, EventHandler click)
         {
             Button button = CreateSidebarButton(text, selected);
-            button.SetBounds(28, y, 244, 42);
+            button.SetBounds(18, y, 224, 40);
             button.Click += click;
             parent.Controls.Add(button);
             return button;
@@ -4081,10 +5327,38 @@ namespace CreamyKeysDesktop
             button.TextAlign = ContentAlignment.MiddleLeft;
             button.Padding = new Padding(18, 0, 0, 0);
             button.FlatStyle = FlatStyle.Flat;
-            button.Font = new Font("Segoe UI Semibold", 9.0f);
+            button.Font = UiTheme.BodyFont(9.0f, FontStyle.Bold);
             button.Cursor = Cursors.Hand;
             SetSidebarButtonState(button, selected);
             return button;
+        }
+
+        private void ApplySidebarIcon(Button button, string iconName)
+        {
+            if (button == null || string.IsNullOrWhiteSpace(iconName))
+            {
+                return;
+            }
+            string path = Path.Combine(_assetsRoot, "ui", "lucide", "png-dark", iconName + ".png");
+            if (!File.Exists(path))
+            {
+                return;
+            }
+            try
+            {
+                using (Image source = Image.FromFile(path))
+                {
+                    Bitmap image = new Bitmap(source);
+                    _uiImages.Add(image);
+                    button.Image = image;
+                    button.ImageAlign = ContentAlignment.MiddleLeft;
+                    button.TextImageRelation = TextImageRelation.ImageBeforeText;
+                    button.Padding = new Padding(12, 0, 8, 0);
+                }
+            }
+            catch
+            {
+            }
         }
 
         private static void UpdateSidebarNav(Button[] buttons, int selectedIndex)
@@ -4107,10 +5381,14 @@ namespace CreamyKeysDesktop
                 return;
             }
 
-            button.BackColor = selected ? Color.FromArgb(228, 236, 234) : Color.FromArgb(218, 220, 217);
-            button.ForeColor = Color.FromArgb(31, 36, 38);
-            button.FlatAppearance.BorderSize = selected ? 1 : 0;
-            button.FlatAppearance.BorderColor = selected ? Color.FromArgb(245, 248, 247) : button.BackColor;
+            button.BackColor = selected ? UiTheme.SurfaceElevated : UiTheme.Surface;
+            button.ForeColor = selected ? UiTheme.Action : UiTheme.TextPrimary;
+            button.FlatAppearance.BorderSize = 0;
+            button.FlatAppearance.BorderColor = UiTheme.Border;
+            button.FlatAppearance.MouseOverBackColor = selected
+                ? UiTheme.SurfaceElevated
+                : UiTheme.SurfaceElevated;
+            button.FlatAppearance.MouseDownBackColor = UiTheme.Border;
         }
 
         private static string PageTitleForIndex(int index)
@@ -4121,6 +5399,163 @@ namespace CreamyKeysDesktop
                 case 2: return "Behavior";
                 case 3: return "Allowed apps";
                 default: return "Dashboard";
+            }
+        }
+
+        private static string PageSubtitleForIndex(int index)
+        {
+            switch (index)
+            {
+                case 1: return "Choose separate packs and tune natural variation.";
+                case 2: return "Control input behavior, performance and visual motion.";
+                case 3: return "Decide exactly which apps can trigger CreamyKeys.";
+                default: return "See your devices, hear changes and edit the active layout.";
+            }
+        }
+
+        private void NavigateToPage(int index)
+        {
+            if (_pageTabs == null || index < 0 || index >= _pageTabs.TabPages.Count)
+            {
+                return;
+            }
+            if (_pageTabs.SelectedIndex == index)
+            {
+                return;
+            }
+
+            int previousIndex = _pageTabs.SelectedIndex;
+            PageTransitionOverlay.Run(_pageTabs, delegate
+            {
+                _pageTabs.SelectedIndex = index;
+                UpdateSidebarNav(_sidebarNavButtons, index);
+                if (_sidebarIndicator != null && index < _sidebarNavButtons.Length)
+                {
+                    _sidebarIndicator.MoveTo(_sidebarNavButtons[index].Top + 8, _config.ReducedMotion);
+                }
+                _pageTitle.Text = PageTitleForIndex(index);
+                _pageSubtitle.Text = PageSubtitleForIndex(index);
+                Text = PageTitleForIndex(index) + " - CreamyKeys";
+            }, _config.ReducedMotion, index >= previousIndex ? 1 : -1);
+        }
+
+        private static Label CreateSidebarSectionLabel(string text, int x, int y)
+        {
+            Label label = new Label();
+            label.Text = text;
+            label.Font = UiTheme.BodyFont(7.6f, FontStyle.Bold);
+            label.ForeColor = UiTheme.TextMuted;
+            label.SetBounds(x, y, 180, 22);
+            return label;
+        }
+
+        private void PlayTestSound()
+        {
+            bool played = _audio.PlayRandom();
+            if (_pulseControl != null)
+            {
+                _pulseControl.Pulse(played ? 1.0f : 0.45f);
+            }
+            UpdateStatus(played ? "Played a shuffled sample." : "No playable sample was found.");
+        }
+
+        private void ShowWelcomeTour()
+        {
+            using (WelcomeForm welcome = new WelcomeForm(_appIcon,
+                delegate
+                {
+                    _audio.PlayRandom();
+                    if (_pulseControl != null)
+                    {
+                        _pulseControl.Pulse(1.0f);
+                    }
+                }))
+            {
+                welcome.ShowDialog(this);
+                if (welcome.DoNotShowAgain)
+                {
+                    _config.ShowWelcomeOnStartup = false;
+                    _config.HasCompletedWelcome = true;
+                    if (_showWelcomeCheck != null)
+                    {
+                        _showWelcomeCheck.Checked = false;
+                    }
+                    _configStore.Save(_config);
+                }
+            }
+        }
+
+        private void ShowUserGuide()
+        {
+            using (UserGuideForm guide = new UserGuideForm(_appIcon))
+            {
+                guide.ShowDialog(this);
+            }
+        }
+
+        private void ImportSettings()
+        {
+            using (OpenFileDialog dialog = new OpenFileDialog())
+            {
+                dialog.Title = "Import CreamyKeys settings";
+                dialog.Filter = "CreamyKeys settings (*.json)|*.json|All files (*.*)|*.*";
+                dialog.CheckFileExists = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    string fallback = _presets.Count > 0 ? _presets[0].Id : "";
+                    AppConfig imported = _configStore.LoadFromPath(dialog.FileName, fallback);
+                    if (FindPreset(imported.Preset) == null && fallback.Length > 0)
+                    {
+                        imported.Preset = fallback;
+                    }
+                    if (FindPreset(imported.MousePreset) == null)
+                    {
+                        imported.MousePreset = DefaultMousePresetId(imported.Preset);
+                    }
+                    _config = imported;
+                    LoadControlsFromConfig();
+                    ApplyRuntimeSettings(true);
+                    SetStartup(_config.RunAtStartup);
+                    _configStore.Save(_config);
+                    UpdateStatus("Imported settings from " + Path.GetFileName(dialog.FileName) + ".");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Could not import these settings:\r\n" + ex.Message,
+                        "CreamyKeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+        }
+
+        private void ExportSettings()
+        {
+            ApplyControlsToConfig();
+            using (SaveFileDialog dialog = new SaveFileDialog())
+            {
+                dialog.Title = "Export CreamyKeys settings";
+                dialog.Filter = "CreamyKeys settings (*.json)|*.json";
+                dialog.FileName = "CreamyKeys-settings.json";
+                dialog.OverwritePrompt = true;
+                if (dialog.ShowDialog(this) != DialogResult.OK)
+                {
+                    return;
+                }
+
+                try
+                {
+                    _configStore.SaveToPath(_config, dialog.FileName);
+                    UpdateStatus("Exported settings to " + Path.GetFileName(dialog.FileName) + ".");
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show("Could not export settings:\r\n" + ex.Message,
+                        "CreamyKeys", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
             }
         }
 
@@ -4136,16 +5571,16 @@ namespace CreamyKeysDesktop
 
         private void AddSoundSlider(Control parent, string text, int y, out CleanTrackBar track, out NumericUpDown valueBox, int min, int max)
         {
-            Label label = CreateLabel(text, 28, y + 10, 156, 26);
+            Label label = CreateLabel(text, 28, y + 10, 180, 26);
             parent.Controls.Add(label);
 
-            CleanTrackBar createdTrack = CreateTrackBar(194, y, 270, min, max);
+            CleanTrackBar createdTrack = CreateTrackBar(210, y, 254, min, max);
             createdTrack.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             parent.Controls.Add(createdTrack);
             track = createdTrack;
 
             NumericUpDown createdBox = CreateNumberBox(480, y + 4, 72, min, max);
-            createdBox.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            createdBox.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             bool syncing = false;
             createdTrack.ValueChanged += delegate
             {
@@ -4176,8 +5611,18 @@ namespace CreamyKeysDesktop
             valueBox = createdBox;
 
             Label percent = CreateMutedLabel("%", 560, y + 10, 30, 24);
-            percent.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+            percent.Anchor = AnchorStyles.Top | AnchorStyles.Right;
             parent.Controls.Add(percent);
+
+            EventHandler arrange = delegate
+            {
+                int boxX = Math.Max(388, parent.ClientSize.Width - 116);
+                createdBox.Left = boxX;
+                percent.Left = boxX + 76;
+                createdTrack.Width = Math.Max(150, boxX - createdTrack.Left - 14);
+            };
+            parent.Resize += arrange;
+            arrange(parent, EventArgs.Empty);
         }
 
         private void AddShadowSlider(Control parent, string text, int y, out CleanTrackBar track, out NumericUpDown valueBox, int min, int max)
@@ -4221,6 +5666,15 @@ namespace CreamyKeysDesktop
             };
             parent.Controls.Add(createdBox);
             valueBox = createdBox;
+
+            EventHandler arrange = delegate
+            {
+                int boxX = Math.Max(388, parent.ClientSize.Width - 94);
+                createdBox.Left = boxX;
+                createdTrack.Width = Math.Max(150, boxX - createdTrack.Left - 14);
+            };
+            parent.Resize += arrange;
+            arrange(parent, EventArgs.Empty);
         }
 
         private CleanTrackBar CreateTrackBar(int x, int y, int width, int min, int max)
@@ -4232,7 +5686,7 @@ namespace CreamyKeysDesktop
             track.TickStyle = TickStyle.None;
             track.SmallChange = 1;
             track.LargeChange = 5;
-            track.BackColor = Color.Transparent;
+            track.BackColor = UiTheme.ContentElevated;
             track.TabStop = false;
             track.SetBounds(x, y, width, 34);
             return track;
@@ -4442,8 +5896,9 @@ namespace CreamyKeysDesktop
         private static TabPage CreateTabPage(string text)
         {
             TabPage page = new TabPage(text);
-            page.BackColor = Color.White;
-            page.ForeColor = Color.FromArgb(35, 45, 49);
+            page.BackColor = UiTheme.ContentElevated;
+            page.ForeColor = UiTheme.Ink;
+            page.Padding = Padding.Empty;
             return page;
         }
 
@@ -4452,7 +5907,8 @@ namespace CreamyKeysDesktop
             Label label = new Label();
             label.Text = text;
             label.AutoEllipsis = false;
-            label.ForeColor = Color.FromArgb(42, 54, 59);
+            label.Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
+            label.ForeColor = UiTheme.Ink;
             label.TextAlign = ContentAlignment.MiddleLeft;
             label.SetBounds(x, y, width, height);
             return label;
@@ -4461,7 +5917,7 @@ namespace CreamyKeysDesktop
         private static Label CreateMutedLabel(string text, int x, int y, int width, int height)
         {
             Label label = CreateLabel(text, x, y, width, height);
-            label.ForeColor = Color.FromArgb(111, 124, 130);
+            label.ForeColor = UiTheme.InkMuted;
             return label;
         }
 
@@ -4474,13 +5930,9 @@ namespace CreamyKeysDesktop
 
         private static Button CreateButton(string text, bool accent)
         {
-            Button button = new Button();
+            ThemeButton button = new ThemeButton();
             button.Text = text;
-            button.FlatStyle = FlatStyle.Flat;
-            button.FlatAppearance.BorderSize = 0;
-            button.BackColor = accent ? Color.FromArgb(22, 116, 128) : Color.FromArgb(235, 241, 242);
-            button.ForeColor = accent ? Color.White : Color.FromArgb(38, 52, 58);
-            button.Cursor = Cursors.Hand;
+            button.Accent = accent;
             return button;
         }
 
@@ -4540,25 +5992,36 @@ namespace CreamyKeysDesktop
             return fallback;
         }
 
+        private void LoadPresetCombo(ComboBox combo, string selectedId)
+        {
+            if (combo == null)
+            {
+                return;
+            }
+
+            combo.Items.Clear();
+            for (int i = 0; i < _presets.Count; i++)
+            {
+                combo.Items.Add(new PresetComboItem(_presets[i]));
+                if (string.Equals(_presets[i].Id, selectedId, StringComparison.OrdinalIgnoreCase))
+                {
+                    combo.SelectedIndex = i;
+                }
+            }
+
+            if (combo.SelectedIndex < 0 && combo.Items.Count > 0)
+            {
+                combo.SelectedIndex = 0;
+            }
+        }
+
         private void LoadControlsFromConfig()
         {
             _loadingControls = true;
             try
             {
-                _presetCombo.Items.Clear();
-                for (int i = 0; i < _presets.Count; i++)
-                {
-                    _presetCombo.Items.Add(new PresetComboItem(_presets[i]));
-                    if (string.Equals(_presets[i].Id, _config.Preset, StringComparison.OrdinalIgnoreCase))
-                    {
-                        _presetCombo.SelectedIndex = i;
-                    }
-                }
-
-                if (_presetCombo.SelectedIndex < 0 && _presetCombo.Items.Count > 0)
-                {
-                    _presetCombo.SelectedIndex = 0;
-                }
+                LoadPresetCombo(_presetCombo, _config.Preset);
+                LoadPresetCombo(_mousePresetCombo, _config.MousePreset);
 
                 _enabledCheck.Checked = _config.Enabled;
                 _keyboardSoundsCheck.Checked = _config.KeyboardSoundsEnabled;
@@ -4572,12 +6035,17 @@ namespace CreamyKeysDesktop
                 _playModifiersCheck.Checked = _config.PlayModifiers;
                 _ignoreInjectedCheck.Checked = _config.IgnoreInjectedInput;
                 _runStartupCheck.Checked = _config.RunAtStartup;
+                _reducedMotionCheck.Checked = _config.ReducedMotion;
+                _showWelcomeCheck.Checked = _config.ShowWelcomeOnStartup;
                 _volumeTrack.Value = _config.Volume;
+                _mouseVolumeTrack.Value = _config.MouseVolume;
                 _keyGainTrack.Value = _config.KeyGainPercent;
                 _randomVolumeTrack.Value = _config.RandomVolumePercent;
                 _randomPitchTrack.Value = _config.RandomPitchPercent;
                 _cooldownNumber.Value = _config.CooldownMs;
                 _maxVoicesNumber.Value = _config.MaxVoices;
+                _keyboardLayersNumber.Value = _config.KeyboardLayers;
+                _mouseLayersNumber.Value = _config.MouseLayers;
                 _shadowEnabledCheck.Checked = _config.VirtualShadowEnabled;
                 _shadowDepthTrack.Value = _config.VirtualShadowDepth;
                 _shadowXTrack.Value = _config.VirtualShadowOffsetX;
@@ -4587,6 +6055,8 @@ namespace CreamyKeysDesktop
                 {
                     _excludedBox.Lines = _config.ExcludedProcesses.ToArray();
                 }
+                _allowedSelection.Clear();
+                AddProcessNames(_allowedSelection, _config.AllowedProcesses);
                 PopulateAllowedAppList();
                 UpdateAllowedAppsEnabled();
                 UpdateValueLabels();
@@ -4604,6 +6074,11 @@ namespace CreamyKeysDesktop
             {
                 _config.Preset = selected.Preset.Id;
             }
+            PresetComboItem selectedMouse = _mousePresetCombo.SelectedItem as PresetComboItem;
+            if (selectedMouse != null)
+            {
+                _config.MousePreset = selectedMouse.Preset.Id;
+            }
 
             _config.Enabled = _enabledCheck.Checked;
             _config.KeyboardSoundsEnabled = _keyboardSoundsCheck.Checked;
@@ -4617,12 +6092,17 @@ namespace CreamyKeysDesktop
             _config.PlayModifiers = _playModifiersCheck.Checked;
             _config.IgnoreInjectedInput = _ignoreInjectedCheck.Checked;
             _config.RunAtStartup = _runStartupCheck.Checked;
+            _config.ReducedMotion = _reducedMotionCheck.Checked;
+            _config.ShowWelcomeOnStartup = _showWelcomeCheck.Checked;
             _config.Volume = _volumeTrack.Value;
+            _config.MouseVolume = _mouseVolumeTrack.Value;
             _config.KeyGainPercent = _keyGainTrack.Value;
             _config.RandomVolumePercent = _randomVolumeTrack.Value;
             _config.RandomPitchPercent = _randomPitchTrack.Value;
             _config.CooldownMs = (int)_cooldownNumber.Value;
             _config.MaxVoices = (int)_maxVoicesNumber.Value;
+            _config.KeyboardLayers = (int)_keyboardLayersNumber.Value;
+            _config.MouseLayers = (int)_mouseLayersNumber.Value;
             _config.VirtualShadowEnabled = _shadowEnabledCheck.Checked;
             _config.VirtualShadowDepth = _shadowDepthTrack.Value;
             _config.VirtualShadowOffsetX = _shadowXTrack.Value;
@@ -4631,6 +6111,10 @@ namespace CreamyKeysDesktop
             _config.AllowedProcesses = ReadAllowedProcesses();
             _config.ExcludedProcesses = ReadExcludedProcesses();
             _config.Normalize(_config.Preset);
+            if (FindPreset(_config.MousePreset) == null)
+            {
+                _config.MousePreset = DefaultMousePresetId(_config.Preset);
+            }
             UpdateValueLabels();
         }
 
@@ -4656,72 +6140,17 @@ namespace CreamyKeysDesktop
 
         private List<string> ReadAllowedProcesses()
         {
-            List<string> result = new List<string>();
-            if (_allowedAppsList == null)
-            {
-                return result;
-            }
-
-            for (int i = 0; i < _allowedAppsList.Items.Count; i++)
-            {
-                if (!_allowedAppsList.GetItemChecked(i))
-                {
-                    continue;
-                }
-
-                string item = _allowedAppsList.Items[i] as string;
-                string normalized = NormalizeProcessName(item);
-                if (normalized.Length > 0 && !ContainsProcessName(result, normalized))
-                {
-                    result.Add(normalized);
-                }
-            }
+            List<string> result = new List<string>(_allowedSelection);
+            result.Sort(StringComparer.OrdinalIgnoreCase);
             return result;
         }
 
         private void PopulateAllowedAppList()
         {
-            if (_allowedAppsList == null)
-            {
-                return;
-            }
-
-            List<string> checkedNames = _loadingControls ? _config.AllowedProcesses : ReadAllowedProcesses();
-            SortedSet<string> names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-            AddProcessNames(names, checkedNames);
-            AddProcessNames(names, _config.AllowedProcesses);
-            AddProcessNames(names, _config.ExcludedProcesses);
-
-            foreach (string processName in GetCandidateProcessNames())
-            {
-                string normalized = NormalizeProcessName(processName);
-                if (normalized.Length > 0)
-                {
-                    names.Add(normalized);
-                }
-            }
-
-            if (names.Count == 0)
-            {
-                names.Add("explorer.exe");
-            }
-
-            _allowedAppsList.BeginUpdate();
-            try
-            {
-                _allowedAppsList.Items.Clear();
-                foreach (string name in names)
-                {
-                    _allowedAppsList.Items.Add(name, ContainsProcessName(checkedNames, name));
-                }
-            }
-            finally
-            {
-                _allowedAppsList.EndUpdate();
-            }
+            RefreshInstalledApps(false);
         }
 
-        private static void AddProcessNames(SortedSet<string> target, List<string> names)
+        private static void AddProcessNames(ICollection<string> target, List<string> names)
         {
             if (target == null || names == null)
             {
@@ -4733,43 +6162,152 @@ namespace CreamyKeysDesktop
                 string normalized = NormalizeProcessName(names[i]);
                 if (normalized.Length > 0)
                 {
-                    target.Add(normalized);
+                    if (!ContainsProcessName(target, normalized))
+                    {
+                        target.Add(normalized);
+                    }
                 }
             }
         }
 
-        private static List<string> GetCandidateProcessNames()
+        private void RefreshInstalledApps(bool force)
         {
-            SortedSet<string> names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (_allowedAppsList == null)
+            {
+                return;
+            }
+            if (!force && _installedApps != null)
+            {
+                RenderAllowedApps();
+                return;
+            }
+
+            if (_appScanStatus != null)
+            {
+                _appScanStatus.Text = "Scanning installed apps, Start menu and open windows...";
+                _appScanStatus.Refresh();
+            }
+            Cursor previousCursor = Cursor;
+            Cursor = Cursors.WaitCursor;
             try
             {
-                Process[] processes = Process.GetProcesses();
-                for (int i = 0; i < processes.Length; i++)
+                _installedApps = InstalledAppScanner.Scan();
+            }
+            finally
+            {
+                Cursor = previousCursor;
+            }
+            RenderAllowedApps();
+        }
+
+        private void RenderAllowedApps()
+        {
+            if (_allowedAppsList == null)
+            {
+                return;
+            }
+
+            Dictionary<string, InstalledAppInfo> apps =
+                new Dictionary<string, InstalledAppInfo>(StringComparer.OrdinalIgnoreCase);
+            if (_installedApps != null)
+            {
+                for (int i = 0; i < _installedApps.Count; i++)
                 {
-                    using (Process process = processes[i])
+                    InstalledAppInfo app = _installedApps[i];
+                    string normalized = NormalizeProcessName(app.ProcessName);
+                    if (normalized.Length > 0)
                     {
-                        try
-                        {
-                            if (process.MainWindowHandle != IntPtr.Zero)
-                            {
-                                string normalized = NormalizeProcessName(process.ProcessName);
-                                if (normalized.Length > 0)
-                                {
-                                    names.Add(normalized);
-                                }
-                            }
-                        }
-                        catch
-                        {
-                        }
+                        apps[normalized] = app;
                     }
                 }
             }
-            catch
+            foreach (string selected in _allowedSelection)
             {
+                string normalized = NormalizeProcessName(selected);
+                if (normalized.Length > 0 && !apps.ContainsKey(normalized))
+                {
+                    InstalledAppInfo app = new InstalledAppInfo();
+                    app.DisplayName = Path.GetFileNameWithoutExtension(normalized);
+                    app.ProcessName = normalized;
+                    app.ExecutablePath = "";
+                    apps.Add(normalized, app);
+                }
             }
 
-            return new List<string>(names);
+            string filter = _appSearchBox == null ? "" : _appSearchBox.Text.Trim();
+            List<InstalledAppInfo> visible = new List<InstalledAppInfo>(apps.Values);
+            visible.Sort(delegate(InstalledAppInfo left, InstalledAppInfo right)
+            {
+                return string.Compare(left.ToString(), right.ToString(), StringComparison.CurrentCultureIgnoreCase);
+            });
+
+            bool previousLoading = _loadingControls;
+            _loadingControls = true;
+            _allowedAppsList.BeginUpdate();
+            try
+            {
+                _allowedAppsList.Items.Clear();
+                for (int i = 0; i < visible.Count; i++)
+                {
+                    InstalledAppInfo app = visible[i];
+                    if (filter.Length > 0 &&
+                        app.ToString().IndexOf(filter, StringComparison.CurrentCultureIgnoreCase) < 0 &&
+                        app.ProcessName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) < 0)
+                    {
+                        continue;
+                    }
+
+                    string imageKey = EnsureAppIcon(app);
+                    ListViewItem item = new ListViewItem(app.ToString(), imageKey);
+                    item.SubItems.Add(app.ProcessName);
+                    item.Tag = app;
+                    item.Checked = _allowedSelection.Contains(NormalizeProcessName(app.ProcessName));
+                    _allowedAppsList.Items.Add(item);
+                }
+            }
+            finally
+            {
+                _allowedAppsList.EndUpdate();
+                _loadingControls = previousLoading;
+            }
+
+            if (_appScanStatus != null)
+            {
+                int count = _installedApps == null ? 0 : _installedApps.Count;
+                _appScanStatus.Text = count.ToString(CultureInfo.InvariantCulture) +
+                    " apps found. Search by app or process name.";
+            }
+        }
+
+        private string EnsureAppIcon(InstalledAppInfo app)
+        {
+            string key = NormalizeProcessName(app.ProcessName);
+            if (_allowedAppImages == null || key.Length == 0)
+            {
+                return "default";
+            }
+            if (_allowedAppImages.Images.ContainsKey(key))
+            {
+                return key;
+            }
+            if (!string.IsNullOrWhiteSpace(app.ExecutablePath))
+            {
+                try
+                {
+                    using (Icon icon = Icon.ExtractAssociatedIcon(app.ExecutablePath))
+                    {
+                        if (icon != null)
+                        {
+                            _allowedAppImages.Images.Add(key, icon.ToBitmap());
+                            return key;
+                        }
+                    }
+                }
+                catch
+                {
+                }
+            }
+            return "default";
         }
 
         private void AddCurrentForegroundApp()
@@ -4815,29 +6353,30 @@ namespace CreamyKeysDesktop
                 return;
             }
 
-            for (int i = 0; i < _allowedAppsList.Items.Count; i++)
+            if (isChecked)
             {
-                string existing = _allowedAppsList.Items[i] as string;
-                if (string.Equals(NormalizeProcessName(existing), normalized, StringComparison.OrdinalIgnoreCase))
-                {
-                    _allowedAppsList.SetItemChecked(i, isChecked);
-                    return;
-                }
+                _allowedSelection.Add(normalized);
             }
-
-            _allowedAppsList.Items.Add(normalized, isChecked);
+            else
+            {
+                _allowedSelection.Remove(normalized);
+            }
+            RenderAllowedApps();
         }
 
         private void UpdateAllowedAppsEnabled()
         {
-            bool enabled = _appAllowListCheck != null && _appAllowListCheck.Checked;
             if (_allowedAppsList != null)
             {
-                _allowedAppsList.Enabled = enabled;
+                _allowedAppsList.Enabled = true;
             }
             if (_manualAppBox != null)
             {
-                _manualAppBox.Enabled = enabled;
+                _manualAppBox.Enabled = true;
+            }
+            if (_appSearchBox != null)
+            {
+                _appSearchBox.Enabled = true;
             }
         }
 
@@ -4870,7 +6409,7 @@ namespace CreamyKeysDesktop
             return trimmed.ToLowerInvariant();
         }
 
-        private static bool ContainsProcessName(List<string> names, string processName)
+        private static bool ContainsProcessName(ICollection<string> names, string processName)
         {
             if (names == null)
             {
@@ -4878,9 +6417,9 @@ namespace CreamyKeysDesktop
             }
 
             string target = NormalizeProcessName(processName);
-            for (int i = 0; i < names.Count; i++)
+            foreach (string name in names)
             {
-                if (string.Equals(NormalizeProcessName(names[i]), target, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(NormalizeProcessName(name), target, StringComparison.OrdinalIgnoreCase))
                 {
                     return true;
                 }
@@ -4998,6 +6537,11 @@ namespace CreamyKeysDesktop
                 {
                     _audio.LoadPreset(preset.DirectoryPath);
                 }
+                PresetInfo mousePreset = FindPreset(_config.MousePreset);
+                if (mousePreset != null)
+                {
+                    _audio.LoadMousePreset(mousePreset.DirectoryPath);
+                }
             }
 
             UpdateTrayMenu();
@@ -5020,6 +6564,15 @@ namespace CreamyKeysDesktop
             for (int i = 0; i < fresh.Count; i++)
             {
                 _presets.Add(fresh[i]);
+            }
+            string fallbackPreset = _presets.Count > 0 ? _presets[0].Id : "";
+            if (FindPreset(_config.Preset) == null && fallbackPreset.Length > 0)
+            {
+                _config.Preset = fallbackPreset;
+            }
+            if (FindPreset(_config.MousePreset) == null && fallbackPreset.Length > 0)
+            {
+                _config.MousePreset = DefaultMousePresetId(fallbackPreset);
             }
             LoadControlsFromConfig();
             ApplyRuntimeSettings(true);
@@ -5050,7 +6603,7 @@ namespace CreamyKeysDesktop
                 _lastPlayTicks = now;
             }
 
-            PlayButtonSound(PhysicalButtonIdForVk(vkCode));
+            PlayKeyboardSound(PhysicalButtonIdForVk(vkCode));
         }
 
         private void OnMouseButtonPressed(string buttonId)
@@ -5066,7 +6619,7 @@ namespace CreamyKeysDesktop
                 return;
             }
 
-            PlayButtonSound(buttonId);
+            PlayMouseButtonSound(buttonId);
         }
 
         private void OnVirtualButtonActivated(object sender, VirtualButtonEventArgs e)
@@ -5086,7 +6639,14 @@ namespace CreamyKeysDesktop
             {
                 return;
             }
-            PlayButtonSound(e.ButtonId);
+            if (e.IsMouse)
+            {
+                PlayMouseButtonSound(e.ButtonId);
+            }
+            else
+            {
+                PlayKeyboardSound(e.ButtonId);
+            }
         }
 
         private void OnDeviceCustomizationChanged(object sender, EventArgs e)
@@ -5095,25 +6655,39 @@ namespace CreamyKeysDesktop
             UpdateStatus("Device customization saved.");
         }
 
-        private void PlayButtonSound(string buttonId)
+        private void PlayKeyboardSound(string buttonId)
         {
-            VirtualButtonConfig custom;
-            if (_config.ButtonOverrides != null &&
-                _config.ButtonOverrides.TryGetValue(buttonId, out custom) &&
-                custom != null &&
-                !string.IsNullOrWhiteSpace(custom.SoundPath))
+            PulseSound(0.78f);
+            if (TryPlayCustomButtonSound(buttonId))
             {
-                try
-                {
-                    if (_audio.PlaySoundPath(custom.SoundPath))
-                    {
-                        return;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    UpdateStatus("Custom sound failed: " + ex.Message);
-                }
+                return;
+            }
+
+            int layers = Math.Max(1, Math.Min(16, _config.KeyboardLayers));
+            for (int i = 0; i < layers; i++)
+            {
+                _audio.PlayRandom();
+            }
+        }
+
+        private void PlayMouseButtonSound(string buttonId)
+        {
+            PulseSound(1.0f);
+            if (TryPlayCustomButtonSound(buttonId))
+            {
+                return;
+            }
+
+            bool played = false;
+            int layers = Math.Max(1, Math.Min(16, _config.MouseLayers));
+            for (int i = 0; i < layers; i++)
+            {
+                played = _audio.PlayRandomMouse() || played;
+            }
+
+            if (played)
+            {
+                return;
             }
 
             string mouseSound = DefaultMouseSoundPath(buttonId);
@@ -5123,6 +6697,45 @@ namespace CreamyKeysDesktop
             }
 
             _audio.PlayRandom();
+        }
+
+        private void PulseSound(float strength)
+        {
+            if (_pulseControl == null || _pulseControl.IsDisposed)
+            {
+                return;
+            }
+            if (InvokeRequired)
+            {
+                BeginInvoke((MethodInvoker)delegate { PulseSound(strength); });
+                return;
+            }
+            _pulseControl.Pulse(strength);
+        }
+
+        private bool TryPlayCustomButtonSound(string buttonId)
+        {
+            VirtualButtonConfig custom;
+            if (_config.ButtonOverrides != null &&
+                _config.ButtonOverrides.TryGetValue(buttonId, out custom) &&
+                custom != null &&
+                !string.IsNullOrWhiteSpace(custom.SoundPath) &&
+                File.Exists(custom.SoundPath))
+            {
+                try
+                {
+                    if (_audio.PlaySoundPath(custom.SoundPath))
+                    {
+                        return true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    UpdateStatus("Custom sound failed: " + ex.Message);
+                }
+            }
+
+            return false;
         }
 
         private string DefaultMouseSoundPath(string buttonId)
@@ -5361,6 +6974,10 @@ namespace CreamyKeysDesktop
             if (_volumeLabel != null)
             {
                 SetNumberValue(_volumeLabel, _volumeTrack.Value);
+            }
+            if (_mouseVolumeLabel != null)
+            {
+                SetNumberValue(_mouseVolumeLabel, _mouseVolumeTrack.Value);
             }
             if (_keyGainLabel != null)
             {
@@ -5602,6 +7219,21 @@ namespace CreamyKeysDesktop
                 }
             }
             return null;
+        }
+
+        private string DefaultMousePresetId(string fallbackPreset)
+        {
+            if (FindPreset("cherrymx_blue_abs_2") != null)
+            {
+                return "cherrymx_blue_abs_2";
+            }
+
+            if (FindPreset(fallbackPreset) != null)
+            {
+                return fallbackPreset;
+            }
+
+            return _presets.Count > 0 ? _presets[0].Id : "";
         }
 
         private static bool IsAdministrator()

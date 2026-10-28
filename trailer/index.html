@@ -1,0 +1,413 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      :root {
+        --canvas: #111412;
+        --surface: #1b201d;
+        --surface-raised: #242a26;
+        --line: #3a443e;
+        --paper: #eef3f0;
+        --ink: #101513;
+        --muted: #9aaba3;
+        --mint: #50d5a4;
+        --coral: #ff6f61;
+        --yellow: #f6c85f;
+        --font: "Segoe UI", Inter, Arial, sans-serif;
+      }
+
+      * { box-sizing: border-box; }
+
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        margin: 0;
+        overflow: hidden;
+        background: var(--canvas);
+        font-family: var(--font);
+      }
+
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        color: var(--paper);
+        background: var(--canvas);
+      }
+
+      #root::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(80, 213, 164, 0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(80, 213, 164, 0.055) 1px, transparent 1px);
+        background-size: 120px 120px;
+      }
+
+      .clip {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+      }
+
+      .scene {
+        padding: 92px 112px;
+        background: var(--canvas);
+      }
+
+      .eyebrow {
+        color: var(--mint);
+        font-size: 28px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0;
+        text-transform: uppercase;
+      }
+
+      h1, h2, p { margin: 0; }
+
+      .scene-one h1 {
+        width: 1050px;
+        margin-top: 58px;
+        color: var(--paper);
+        font-size: 132px;
+        line-height: 0.96;
+        font-weight: 780;
+        letter-spacing: 0;
+      }
+
+      .scene-one h1 span { color: var(--mint); }
+
+      .scene-one .lead {
+        width: 760px;
+        margin-top: 54px;
+        color: var(--muted);
+        font-size: 34px;
+        line-height: 1.42;
+      }
+
+      .signal-panel {
+        position: absolute;
+        right: 112px;
+        top: 92px;
+        width: 560px;
+        height: 896px;
+        padding: 58px 52px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .signal-panel .label {
+        color: var(--muted);
+        font-size: 28px;
+        text-transform: uppercase;
+      }
+
+      .wave {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        height: 310px;
+        margin-top: 88px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .bar {
+        width: 13px;
+        height: var(--h);
+        min-height: 12px;
+        background: var(--mint);
+        transform-origin: center;
+      }
+
+      .signal-copy {
+        margin-top: 76px;
+        color: var(--paper);
+        font-size: 48px;
+        line-height: 1.14;
+        font-weight: 700;
+      }
+
+      .signal-note {
+        margin-top: 24px;
+        color: var(--muted);
+        font-size: 28px;
+        line-height: 1.45;
+      }
+
+      .scene-two,
+      .scene-three {
+        opacity: 0;
+        background: #151a17;
+      }
+
+      .scene-header {
+        position: relative;
+        z-index: 3;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+      }
+
+      .scene-header h2 {
+        max-width: 1160px;
+        margin-top: 22px;
+        font-size: 76px;
+        line-height: 1.02;
+        font-weight: 760;
+      }
+
+      .scene-index {
+        color: #68736d;
+        font-size: 86px;
+        font-weight: 800;
+      }
+
+      .app-shot {
+        position: absolute;
+        left: 250px;
+        top: 276px;
+        width: 1420px;
+        height: 728px;
+        object-fit: cover;
+        object-position: top center;
+        border: 1px solid #536159;
+        box-shadow: 0 34px 80px rgba(0, 0, 0, 0.38);
+      }
+
+      .shot-rail {
+        position: absolute;
+        left: 112px;
+        top: 338px;
+        width: 90px;
+        height: 570px;
+        background: var(--mint);
+      }
+
+      .shot-rail span {
+        position: absolute;
+        left: 25px;
+        bottom: 28px;
+        color: var(--canvas);
+        font-size: 28px;
+        font-weight: 800;
+        writing-mode: vertical-rl;
+        transform: rotate(180deg);
+      }
+
+      .scene-three .app-shot {
+        left: 112px;
+        top: 292px;
+        width: 1080px;
+        height: 700px;
+        object-position: top left;
+      }
+
+      .feature-stack {
+        position: absolute;
+        right: 112px;
+        top: 292px;
+        width: 540px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .feature {
+        min-height: 150px;
+        padding: 28px 30px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .feature strong {
+        display: block;
+        color: var(--mint);
+        font-size: 28px;
+        text-transform: uppercase;
+      }
+
+      .feature span {
+        display: block;
+        margin-top: 12px;
+        color: var(--paper);
+        font-size: 31px;
+        line-height: 1.2;
+        font-weight: 650;
+      }
+
+      .scene-four {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        opacity: 0;
+        text-align: center;
+        background: var(--paper);
+        color: var(--ink);
+      }
+
+      .final-content { width: 1380px; }
+
+      .brand-mark {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 112px;
+        height: 112px;
+        background: var(--mint);
+        color: var(--canvas);
+        font-size: 48px;
+        font-weight: 850;
+      }
+
+      .scene-four h2 {
+        margin-top: 44px;
+        font-size: 118px;
+        line-height: 1;
+        font-weight: 800;
+      }
+
+      .scene-four p {
+        margin-top: 34px;
+        color: #526159;
+        font-size: 36px;
+      }
+
+      .final-tags {
+        display: flex;
+        justify-content: center;
+        gap: 14px;
+        margin-top: 64px;
+      }
+
+      .final-tags span {
+        padding: 15px 22px;
+        border: 1px solid #a8b5ae;
+        color: #324038;
+        font-size: 28px;
+        font-weight: 650;
+      }
+
+      .accent-line {
+        position: absolute;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        height: 18px;
+        background: var(--mint);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="18" data-width="1920" data-height="1080">
+      <section id="opening" class="clip scene scene-one" data-start="0" data-duration="4.2" data-track-index="0">
+        <div class="intro-copy">
+          <div class="eyebrow">CreamyKeys desktop</div>
+          <h1>Every key<br /><span>feels different.</span></h1>
+          <p class="lead">A calmer, richer sound layer for every keyboard and mouse click.</p>
+        </div>
+        <aside class="signal-panel">
+          <div class="label">Live variation</div>
+          <div class="wave" aria-hidden="true">
+            <i class="bar" style="--h: 24%"></i><i class="bar" style="--h: 44%"></i>
+            <i class="bar" style="--h: 70%"></i><i class="bar" style="--h: 34%"></i>
+            <i class="bar" style="--h: 82%"></i><i class="bar" style="--h: 52%"></i>
+            <i class="bar" style="--h: 96%"></i><i class="bar" style="--h: 42%"></i>
+            <i class="bar" style="--h: 76%"></i><i class="bar" style="--h: 30%"></i>
+            <i class="bar" style="--h: 60%"></i><i class="bar" style="--h: 88%"></i>
+            <i class="bar" style="--h: 38%"></i><i class="bar" style="--h: 68%"></i>
+            <i class="bar" style="--h: 48%"></i><i class="bar" style="--h: 78%"></i>
+            <i class="bar" style="--h: 32%"></i><i class="bar" style="--h: 56%"></i>
+          </div>
+          <div class="signal-copy">Natural, not repetitive.</div>
+          <div class="signal-note">No-repeat shuffle with controlled pitch, volume and layers.</div>
+        </aside>
+      </section>
+
+      <section id="dashboard-reveal" class="clip scene scene-two" data-start="3.8" data-duration="5" data-track-index="1">
+        <header class="scene-header">
+          <div>
+            <div class="eyebrow">One quiet workspace</div>
+            <h2>See every device.<br />Hear every change.</h2>
+          </div>
+          <div class="scene-index">01</div>
+        </header>
+        <div class="shot-rail"><span>LIVE CONTROL</span></div>
+        <img class="app-shot" src="assets/dashboard.png" alt="CreamyKeys dashboard" />
+      </section>
+
+      <section id="sound-controls" class="clip scene scene-three" data-start="8.4" data-duration="5" data-track-index="2">
+        <header class="scene-header">
+          <div>
+            <div class="eyebrow">Built for your hands</div>
+            <h2>Tune the feel.<br />Keep the flow.</h2>
+          </div>
+          <div class="scene-index">02</div>
+        </header>
+        <img class="app-shot" src="assets/sound-library.png" alt="CreamyKeys sound library" />
+        <div class="feature-stack">
+          <div class="feature"><strong>Variation</strong><span>Shuffle samples without immediate repeats</span></div>
+          <div class="feature"><strong>Control</strong><span>Separate packs and volume for keys and mouse</span></div>
+          <div class="feature"><strong>Portable</strong><span>Import and export your complete settings</span></div>
+        </div>
+      </section>
+
+      <section id="closing" class="clip scene scene-four" data-start="13" data-duration="5" data-track-index="3">
+        <div class="final-content">
+          <div class="brand-mark">CK</div>
+          <h2>CreamyKeys</h2>
+          <p>Sound that follows your hands.</p>
+          <div class="final-tags">
+            <span>Keyboard + mouse</span>
+            <span>Natural variation</span>
+            <span>Windows desktop</span>
+          </div>
+        </div>
+        <div class="accent-line"></div>
+      </section>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true, defaults: { ease: "power3.out" } });
+
+      tl.fromTo(".scene-one .eyebrow", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.55 }, 0.18)
+        .fromTo(".scene-one h1", { y: 58 }, { y: 0, duration: 0.8 }, 0)
+        .fromTo(".scene-one .lead", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.65 }, 0.72)
+        .fromTo(".signal-panel", { opacity: 0, x: 90 }, { opacity: 1, x: 0, duration: 0.8 }, 0.36)
+        .fromTo(".bar", { scaleY: 0.06, opacity: 0.35 }, { scaleY: 1, opacity: 1, duration: 0.62, stagger: 0.035 }, 0.82)
+        .to(".scene-one", { opacity: 0, scale: 1.018, duration: 0.55, ease: "power2.inOut" }, 3.65)
+
+        .fromTo(".scene-two", { opacity: 0, x: 100 }, { opacity: 1, x: 0, duration: 0.7 }, 3.8)
+        .fromTo(".scene-two .scene-header", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.62 }, 4.02)
+        .fromTo(".scene-two .app-shot", { opacity: 0, y: 90, scale: 0.965 }, { opacity: 1, y: 0, scale: 1, duration: 0.9 }, 4.24)
+        .fromTo(".shot-rail", { opacity: 0, scaleY: 0.1 }, { opacity: 1, scaleY: 1, transformOrigin: "bottom", duration: 0.65 }, 4.58)
+        .to(".scene-two", { opacity: 0, x: -70, duration: 0.55, ease: "power2.inOut" }, 8.15)
+
+        .fromTo(".scene-three", { opacity: 0, x: 100 }, { opacity: 1, x: 0, duration: 0.7 }, 8.4)
+        .fromTo(".scene-three .scene-header", { opacity: 0, y: 36 }, { opacity: 1, y: 0, duration: 0.62 }, 8.62)
+        .fromTo(".scene-three .app-shot", { opacity: 0, x: -70 }, { opacity: 1, x: 0, duration: 0.82 }, 8.86)
+        .fromTo(".feature", { opacity: 0, x: 58 }, { opacity: 1, x: 0, duration: 0.55, stagger: 0.17 }, 9.1)
+        .to(".scene-three", { opacity: 0, scale: 0.985, duration: 0.55, ease: "power2.inOut" }, 12.72)
+
+        .fromTo(".scene-four", { opacity: 0 }, { opacity: 1, duration: 0.65 }, 13)
+        .fromTo(".brand-mark", { opacity: 0, y: 40, scale: 0.72 }, { opacity: 1, y: 0, scale: 1, duration: 0.75 }, 13.24)
+        .fromTo(".scene-four h2", { opacity: 0, y: 52 }, { opacity: 1, y: 0, duration: 0.78 }, 13.5)
+        .fromTo(".scene-four p", { opacity: 0, y: 28 }, { opacity: 1, y: 0, duration: 0.6 }, 13.86)
+        .fromTo(".final-tags span", { opacity: 0, y: 22 }, { opacity: 1, y: 0, duration: 0.45, stagger: 0.12 }, 14.18)
+        .fromTo(".accent-line", { scaleX: 0 }, { scaleX: 1, transformOrigin: "left", duration: 0.72 }, 14.34);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
