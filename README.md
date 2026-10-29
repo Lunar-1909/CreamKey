@@ -13,6 +13,10 @@ Download the latest portable build from the GitHub Releases page:
 
 Extract the zip, then run `CreamyKeys.exe`.
 
+Watch the 18-second 1080p product trailer from the latest Release:
+
+- `CreamyKeys-trailer-v1.2.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
+
 ## Quick Start
 
 1. Run `CreamyKeys.exe`.

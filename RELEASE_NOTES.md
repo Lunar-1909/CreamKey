@@ -12,11 +12,12 @@ Interface reliability, app discovery, and onboarding update.
 - Added app logos, search, process-name details, foreground-app capture, and manual fallback to Allowed apps.
 - Refined the Welcome pop-up with the real CreamyKeys logo and a Do not show again option.
 - Added a Behavior setting to re-enable the welcome pop-up and a complete in-app User guide.
+- Added an 18-second 1080p product trailer using current interface captures and native CreamyKeys key and mouse sounds.
 - Removed all author-identifying text from the interface, source-facing docs, and release metadata.
 - Preserved no-repeat keyboard/mouse sample variation, layered playback, import/export, and reduced motion.
 
 ## Download
 
-Download `CreamyKeys-portable.zip`, extract it, and run `CreamyKeys.exe`.
+Download `CreamyKeys-portable.zip`, extract it, and run `CreamyKeys.exe`. The Release also includes `CreamyKeys-trailer-v1.2.0.mp4` as a short visual overview.
 
 Run as administrator when using CreamyKeys with elevated games.

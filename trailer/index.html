@@ -258,15 +258,13 @@
       .final-content { width: 1380px; }
 
       .brand-mark {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
+        display: inline-block;
         width: 112px;
         height: 112px;
-        background: var(--mint);
-        color: var(--canvas);
-        font-size: 48px;
-        font-weight: 850;
+        border: 2px solid #92a299;
+        border-radius: 12px;
+        object-fit: cover;
+        box-shadow: 0 18px 44px rgba(18, 27, 23, 0.16);
       }
 
       .scene-four h2 {
@@ -308,71 +306,83 @@
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="18" data-width="1920" data-height="1080">
-      <section id="opening" class="clip scene scene-one" data-start="0" data-duration="4.2" data-track-index="0">
-        <div class="intro-copy">
-          <div class="eyebrow">CreamyKeys desktop</div>
-          <h1>Every key<br /><span>feels different.</span></h1>
-          <p class="lead">A calmer, richer sound layer for every keyboard and mouse click.</p>
+    <div data-hf-id="hf-dcwt" id="root" data-composition-id="main" data-start="0" data-duration="18" data-width="1920" data-height="1080">
+      <audio id="key-intro-1" class="clip" data-start="0.78" data-duration="0.22" data-track-index="4" data-volume="0.42" src="assets/key_05.wav"></audio>
+      <audio id="key-intro-2" class="clip" data-start="1.12" data-duration="0.22" data-track-index="4" data-volume="0.38" src="assets/key_18.wav"></audio>
+      <audio id="key-intro-3" class="clip" data-start="1.47" data-duration="0.22" data-track-index="4" data-volume="0.44" src="assets/key_31.wav"></audio>
+      <audio id="key-intro-4" class="clip" data-start="1.82" data-duration="0.22" data-track-index="4" data-volume="0.36" src="assets/key_05.wav"></audio>
+      <audio id="dashboard-click" class="clip" data-start="4.18" data-duration="0.30" data-track-index="4" data-volume="0.48" src="assets/mouse_left.wav"></audio>
+      <audio id="dashboard-land" class="clip" data-start="4.57" data-duration="0.40" data-track-index="4" data-volume="0.32" src="assets/corsair_lmb_down.wav"></audio>
+      <audio id="sound-click" class="clip" data-start="8.82" data-duration="0.30" data-track-index="4" data-volume="0.44" src="assets/mouse_left.wav"></audio>
+      <audio id="feature-key-1" class="clip" data-start="9.18" data-duration="0.22" data-track-index="4" data-volume="0.38" src="assets/key_31.wav"></audio>
+      <audio id="feature-key-2" class="clip" data-start="9.50" data-duration="0.22" data-track-index="4" data-volume="0.34" src="assets/key_18.wav"></audio>
+      <audio id="feature-key-3" class="clip" data-start="9.82" data-duration="0.22" data-track-index="4" data-volume="0.40" src="assets/key_05.wav"></audio>
+      <audio id="closing-click" class="clip" data-start="13.18" data-duration="0.32" data-track-index="4" data-volume="0.38" src="assets/corsair_mmb_down.wav"></audio>
+
+      <section data-hf-id="hf-ufst" id="opening" class="clip scene scene-one" data-start="0" data-duration="4.2" data-track-index="0">
+        <div data-hf-id="hf-3wp0" class="intro-copy">
+          <div data-hf-id="hf-vno4" class="eyebrow">CreamyKeys desktop</div>
+          <h1 data-hf-id="hf-ja22">Every key<br data-hf-id="hf-x5px" /><span data-hf-id="hf-z0zv">feels different.</span></h1>
+          <p data-hf-id="hf-vxxc" class="lead">A calmer, richer sound layer for every keyboard and mouse click.</p>
         </div>
-        <aside class="signal-panel">
-          <div class="label">Live variation</div>
-          <div class="wave" aria-hidden="true">
-            <i class="bar" style="--h: 24%"></i><i class="bar" style="--h: 44%"></i>
-            <i class="bar" style="--h: 70%"></i><i class="bar" style="--h: 34%"></i>
-            <i class="bar" style="--h: 82%"></i><i class="bar" style="--h: 52%"></i>
-            <i class="bar" style="--h: 96%"></i><i class="bar" style="--h: 42%"></i>
-            <i class="bar" style="--h: 76%"></i><i class="bar" style="--h: 30%"></i>
-            <i class="bar" style="--h: 60%"></i><i class="bar" style="--h: 88%"></i>
-            <i class="bar" style="--h: 38%"></i><i class="bar" style="--h: 68%"></i>
-            <i class="bar" style="--h: 48%"></i><i class="bar" style="--h: 78%"></i>
-            <i class="bar" style="--h: 32%"></i><i class="bar" style="--h: 56%"></i>
+        <aside data-hf-id="hf-ejti" class="signal-panel">
+          <div data-hf-id="hf-jca5" class="label">Live variation</div>
+          <div data-hf-id="hf-1qnq" class="wave" aria-hidden="true">
+            <i data-hf-id="hf-eeru" class="bar" style="--h: 24%"></i><i data-hf-id="hf-t5mc" class="bar" style="--h: 44%"></i>
+            <i data-hf-id="hf-q0cb" class="bar" style="--h: 70%"></i><i data-hf-id="hf-agiz" class="bar" style="--h: 34%"></i>
+            <i data-hf-id="hf-0h9y" class="bar" style="--h: 82%"></i><i data-hf-id="hf-detr" class="bar" style="--h: 52%"></i>
+            <i data-hf-id="hf-7j1r" class="bar" style="--h: 96%"></i><i data-hf-id="hf-1piy" class="bar" style="--h: 42%"></i>
+            <i data-hf-id="hf-b6mh" class="bar" style="--h: 76%"></i><i data-hf-id="hf-mxsv" class="bar" style="--h: 30%"></i>
+            <i data-hf-id="hf-iyki" class="bar" style="--h: 60%"></i><i data-hf-id="hf-be4c" class="bar" style="--h: 88%"></i>
+            <i data-hf-id="hf-hbnr" class="bar" style="--h: 38%"></i><i data-hf-id="hf-seqi" class="bar" style="--h: 68%"></i>
+            <i data-hf-id="hf-gocg" class="bar" style="--h: 48%"></i><i data-hf-id="hf-og6b" class="bar" style="--h: 78%"></i>
+            <i data-hf-id="hf-3it5" class="bar" style="--h: 32%"></i><i data-hf-id="hf-cviz" class="bar" style="--h: 56%"></i>
           </div>
-          <div class="signal-copy">Natural, not repetitive.</div>
-          <div class="signal-note">No-repeat shuffle with controlled pitch, volume and layers.</div>
+          <div data-hf-id="hf-2xf3" class="signal-copy">Natural, not repetitive.</div>
+          <div data-hf-id="hf-3t6w" class="signal-note">No-repeat shuffle with controlled pitch, volume and layers.</div>
         </aside>
       </section>
 
-      <section id="dashboard-reveal" class="clip scene scene-two" data-start="3.8" data-duration="5" data-track-index="1">
-        <header class="scene-header">
-          <div>
-            <div class="eyebrow">One quiet workspace</div>
-            <h2>See every device.<br />Hear every change.</h2>
+      <section data-hf-id="hf-o0iw" id="dashboard-reveal" class="clip scene scene-two" data-start="3.8" data-duration="5" data-track-index="1">
+        <header data-hf-id="hf-ex6i" class="scene-header">
+          <div data-hf-id="hf-yeow">
+            <div data-hf-id="hf-ra8y" class="eyebrow">One quiet workspace</div>
+            <h2 data-hf-id="hf-ddg0">See every device.<br data-hf-id="hf-rsrt" />Hear every change.</h2>
           </div>
-          <div class="scene-index">01</div>
+          <div data-hf-id="hf-9wp8" class="scene-index">01</div>
         </header>
-        <div class="shot-rail"><span>LIVE CONTROL</span></div>
-        <img class="app-shot" src="assets/dashboard.png" alt="CreamyKeys dashboard" />
+        <div data-hf-id="hf-htfh" class="shot-rail"><span data-hf-id="hf-dg0y">LIVE CONTROL</span></div>
+        <img data-hf-id="hf-qxub" class="app-shot" src="assets/dashboard.png" alt="CreamyKeys dashboard" />
       </section>
 
-      <section id="sound-controls" class="clip scene scene-three" data-start="8.4" data-duration="5" data-track-index="2">
-        <header class="scene-header">
-          <div>
-            <div class="eyebrow">Built for your hands</div>
-            <h2>Tune the feel.<br />Keep the flow.</h2>
+      <section data-hf-id="hf-9ybu" id="sound-controls" class="clip scene scene-three" data-start="8.4" data-duration="5" data-track-index="2">
+        <header data-hf-id="hf-134u" class="scene-header">
+          <div data-hf-id="hf-y7yw">
+            <div data-hf-id="hf-va7h" class="eyebrow">Built for your hands</div>
+            <h2 data-hf-id="hf-y7fo">Tune the feel.<br data-hf-id="hf-szow" />Keep the flow.</h2>
           </div>
-          <div class="scene-index">02</div>
+          <div data-hf-id="hf-8ps5" class="scene-index">02</div>
         </header>
-        <img class="app-shot" src="assets/sound-library.png" alt="CreamyKeys sound library" />
-        <div class="feature-stack">
-          <div class="feature"><strong>Variation</strong><span>Shuffle samples without immediate repeats</span></div>
-          <div class="feature"><strong>Control</strong><span>Separate packs and volume for keys and mouse</span></div>
-          <div class="feature"><strong>Portable</strong><span>Import and export your complete settings</span></div>
+        <img data-hf-id="hf-w95k" class="app-shot" src="assets/sound-library.png" alt="CreamyKeys sound library" />
+        <div data-hf-id="hf-ug3t" class="feature-stack">
+          <div data-hf-id="hf-ryk2" class="feature"><strong data-hf-id="hf-g20r">Variation</strong><span data-hf-id="hf-jng0">Shuffle samples without immediate repeats</span></div>
+          <div data-hf-id="hf-5th2" class="feature"><strong data-hf-id="hf-az3j">Control</strong><span data-hf-id="hf-nw2q">Separate packs and volume for keys and mouse</span></div>
+          <div data-hf-id="hf-67s3" class="feature"><strong data-hf-id="hf-3kd1">Portable</strong><span data-hf-id="hf-aflc">Import and export your complete settings</span></div>
         </div>
       </section>
 
-      <section id="closing" class="clip scene scene-four" data-start="13" data-duration="5" data-track-index="3">
-        <div class="final-content">
-          <div class="brand-mark">CK</div>
-          <h2>CreamyKeys</h2>
-          <p>Sound that follows your hands.</p>
-          <div class="final-tags">
-            <span>Keyboard + mouse</span>
-            <span>Natural variation</span>
-            <span>Windows desktop</span>
+      <section data-hf-id="hf-c708" id="closing" class="clip scene scene-four" data-start="13" data-duration="5" data-track-index="3">
+        <div data-hf-id="hf-2z4g" class="final-content">
+          <img data-hf-id="hf-sqg1" class="brand-mark" src="assets/app-icon.png" alt="CreamyKeys logo" />
+          <h2 data-hf-id="hf-ah9u">CreamyKeys</h2>
+          <p data-hf-id="hf-3nek">Sound that follows your hands.</p>
+          <div data-hf-id="hf-hpnq" class="final-tags">
+            <span data-hf-id="hf-99v2">Keyboard + mouse</span>
+            <span data-hf-id="hf-7mnb">Natural variation</span>
+            <span data-hf-id="hf-sd76">Windows desktop</span>
           </div>
         </div>
-        <div class="accent-line"></div>
+        <div data-hf-id="hf-yg89" class="accent-line"></div>
       </section>
     </div>
 
