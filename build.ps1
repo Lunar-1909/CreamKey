@@ -19,6 +19,12 @@ $exe = Join-Path $dist "CreamyKeys.exe"
 $oldExe = Join-Path $dist "CreamyKeysDesktop.exe"
 $intermediateExe = Join-Path $obj "CreamyKeys.exe"
 $csc = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+$wpf = Join-Path (Split-Path -Parent $csc) "WPF"
+$presentationCore = Join-Path $wpf "PresentationCore.dll"
+$presentationFramework = Join-Path $wpf "PresentationFramework.dll"
+$windowsBase = Join-Path $wpf "WindowsBase.dll"
+$windowsFormsIntegration = Join-Path $wpf "WindowsFormsIntegration.dll"
+$systemXaml = Join-Path (Split-Path -Parent $csc) "System.Xaml.dll"
 
 if (-not (Test-Path -LiteralPath $csc)) {
     throw "C# compiler not found: $csc"
@@ -104,6 +110,11 @@ if (Test-Path -LiteralPath $oldExe) {
     /reference:System.Management.dll `
     /reference:System.Web.Extensions.dll `
     /reference:System.Windows.Forms.dll `
+    /reference:$presentationCore `
+    /reference:$presentationFramework `
+    /reference:$windowsBase `
+    /reference:$windowsFormsIntegration `
+    /reference:$systemXaml `
     $sources
 
 if ($LASTEXITCODE -ne 0) {

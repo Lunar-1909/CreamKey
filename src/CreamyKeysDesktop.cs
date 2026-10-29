@@ -15,11 +15,16 @@ using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using OpenFileDialog = System.Windows.Forms.OpenFileDialog;
+using SaveFileDialog = System.Windows.Forms.SaveFileDialog;
 
 namespace CreamyKeysDesktop
 {
     internal static class Program
     {
+        private const string SingleInstanceName = "CreamyKeysDesktop.SingleInstance.4ECED3E4";
+        private const string ActivationEventName = "CreamyKeysDesktop.Activate.4ECED3E4";
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -36,27 +41,31 @@ namespace CreamyKeysDesktop
                 return;
             }
 
-            bool created;
-            using (Mutex mutex = new Mutex(true, "CreamyKeysDesktop.SingleInstance.4ECED3E4", out created))
+            bool activationCreated;
+            using (EventWaitHandle activationEvent = new EventWaitHandle(false,
+                EventResetMode.AutoReset, ActivationEventName, out activationCreated))
             {
-                if (!created)
+                bool created;
+                using (Mutex mutex = new Mutex(true, SingleInstanceName, out created))
                 {
-                    MessageBox.Show("CreamyKeys is already running in the tray.", "CreamyKeys",
-                        MessageBoxButtons.OK, MessageBoxIcon.Information);
-                    return;
-                }
+                    if (!created)
+                    {
+                        activationEvent.Set();
+                        return;
+                    }
 
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
-                try
-                {
-                    Application.Run(new CreamyKeysApplicationContext());
-                }
-                catch (Exception ex)
-                {
-                    WriteCrashLog(ex);
-                    MessageBox.Show("CreamyKeys could not start:\r\n" + ex.Message,
-                        "CreamyKeys", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
+                    try
+                    {
+                        Application.Run(new CreamyKeysApplicationContext(activationEvent));
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteCrashLog(ex);
+                        MessageBox.Show("CreamyKeys could not start:\r\n" + ex.Message,
+                            "CreamyKeys", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    }
                 }
             }
         }
@@ -167,6 +176,22 @@ namespace CreamyKeysDesktop
                         return 0;
                     }
 
+                    if (page == 7)
+                    {
+                        using (SplashForm splash = new SplashForm())
+                        {
+                            splash.StartPosition = FormStartPosition.Manual;
+                            splash.Location = new Point(-18000, -18000);
+                            splash.Show();
+                            Application.DoEvents();
+                            Thread.Sleep(120);
+                            CaptureControl(splash, path);
+                            splash.Close();
+                        }
+                        form.Hide();
+                        return 0;
+                    }
+
                     form.SelectPageForCapture(page);
                     Thread.Sleep(220);
                     Application.DoEvents();
@@ -202,7 +227,7 @@ namespace CreamyKeysDesktop
         {
             int parsed;
             return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
-                ? Math.Max(0, Math.Min(6, parsed))
+                ? Math.Max(0, Math.Min(7, parsed))
                 : 0;
         }
 
@@ -3272,6 +3297,7 @@ namespace CreamyKeysDesktop
 
     internal sealed class CleanTrackBar : Control
     {
+        private readonly System.Windows.Forms.Timer _animationTimer;
         private int _minimum;
         private int _maximum;
         private int _value;
@@ -3280,6 +3306,8 @@ namespace CreamyKeysDesktop
         private int _tickFrequency;
         private TickStyle _tickStyle;
         private bool _dragging;
+        private float _visualValue;
+        private float _animationVelocity;
 
         public event EventHandler ValueChanged;
 
@@ -3297,6 +3325,9 @@ namespace CreamyKeysDesktop
             _largeChange = 5;
             _tickFrequency = 10;
             _tickStyle = TickStyle.None;
+            _animationTimer = new System.Windows.Forms.Timer();
+            _animationTimer.Interval = 16;
+            _animationTimer.Tick += AnimateValue;
         }
 
         public int Minimum
@@ -3336,6 +3367,15 @@ namespace CreamyKeysDesktop
                     return;
                 }
                 _value = next;
+                if (!IsHandleCreated || _dragging)
+                {
+                    _visualValue = next;
+                    _animationVelocity = 0.0f;
+                }
+                else
+                {
+                    _animationTimer.Start();
+                }
                 Invalidate();
                 EventHandler handler = ValueChanged;
                 if (handler != null)
@@ -3374,10 +3414,37 @@ namespace CreamyKeysDesktop
             e.Graphics.Clear(BackColor);
             e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 
+            Rectangle shell = new Rectangle(1, 3, Math.Max(4, Width - 2), Math.Max(20, Height - 6));
+            using (GraphicsPath shellPath = RoundedRect(shell, 7))
+            using (LinearGradientBrush shellBrush = new LinearGradientBrush(shell,
+                UiTheme.ContentElevated, Color.FromArgb(226, 232, 228), LinearGradientMode.Vertical))
+            using (Pen shellBorder = new Pen(Color.FromArgb(165, 176, 169), 1.0f))
+            {
+                e.Graphics.FillPath(shellBrush, shellPath);
+                e.Graphics.DrawPath(shellBorder, shellPath);
+            }
+
+            int buttonWidth = Math.Min(30, Math.Max(24, shell.Height));
+            Rectangle leftButton = new Rectangle(shell.X + 2, shell.Y + 2, buttonWidth, shell.Height - 4);
+            Rectangle rightButton = new Rectangle(shell.Right - buttonWidth - 2, shell.Y + 2,
+                buttonWidth, shell.Height - 4);
+            using (GraphicsPath leftPath = RoundedRect(leftButton, 5))
+            using (GraphicsPath rightPath = RoundedRect(rightButton, 5))
+            using (SolidBrush buttonBrush = new SolidBrush(UiTheme.Surface))
+            {
+                e.Graphics.FillPath(buttonBrush, leftPath);
+                e.Graphics.FillPath(buttonBrush, rightPath);
+            }
+            DrawArrow(e.Graphics, leftButton, false);
+            DrawArrow(e.Graphics, rightButton, true);
+
             int trackY = Height / 2;
-            Rectangle trackRect = new Rectangle(9, trackY - 3, Math.Max(4, Width - 18), 6);
-            using (GraphicsPath trackPath = RoundedRect(trackRect, 4))
-            using (SolidBrush trackBrush = new SolidBrush(UiTheme.ContentBorder))
+            int railLeft = leftButton.Right + 8;
+            int railRight = rightButton.Left - 8;
+            Rectangle trackRect = new Rectangle(railLeft, trackY - 3,
+                Math.Max(4, railRight - railLeft), 6);
+            using (GraphicsPath trackPath = RoundedRect(trackRect, 3))
+            using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(181, 192, 185)))
             {
                 e.Graphics.FillPath(trackBrush, trackPath);
             }
@@ -3386,22 +3453,48 @@ namespace CreamyKeysDesktop
             Rectangle fillRect = new Rectangle(trackRect.X, trackRect.Y, Math.Max(0, thumbX - trackRect.X), trackRect.Height);
             if (fillRect.Width > 0)
             {
-                using (GraphicsPath fillPath = RoundedRect(fillRect, 4))
+                using (GraphicsPath fillPath = RoundedRect(fillRect, 3))
                 using (SolidBrush fillBrush = new SolidBrush(UiTheme.ActionActive))
                 {
                     e.Graphics.FillPath(fillBrush, fillPath);
                 }
             }
 
-            Rectangle halo = new Rectangle(thumbX - 11, trackY - 11, 22, 22);
-            Rectangle thumb = new Rectangle(thumbX - 7, trackY - 7, 14, 14);
-            using (SolidBrush haloBrush = new SolidBrush(Color.FromArgb(50, UiTheme.Action)))
-            using (SolidBrush thumbBrush = new SolidBrush(UiTheme.Action))
-            using (Pen thumbBorder = new Pen(UiTheme.ContentElevated, 2.0f))
+            int thumbWidth = Math.Min(42, Math.Max(32, trackRect.Width / 5));
+            Rectangle thumbShadow = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 6,
+                thumbWidth, shell.Height - 7);
+            Rectangle thumb = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 3,
+                thumbWidth, shell.Height - 8);
+            using (GraphicsPath shadowPath = RoundedRect(thumbShadow, 5))
+            using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(54, 0, 0, 0)))
             {
-                e.Graphics.FillEllipse(haloBrush, halo);
-                e.Graphics.FillEllipse(thumbBrush, thumb);
-                e.Graphics.DrawEllipse(thumbBorder, thumb);
+                e.Graphics.FillPath(shadowBrush, shadowPath);
+            }
+            using (GraphicsPath thumbPath = RoundedRect(thumb, 5))
+            using (LinearGradientBrush thumbBrush = new LinearGradientBrush(thumb,
+                Color.White, Color.FromArgb(201, 209, 204), LinearGradientMode.Vertical))
+            using (Pen thumbBorder = new Pen(Color.FromArgb(126, 139, 131), 1.0f))
+            {
+                e.Graphics.FillPath(thumbBrush, thumbPath);
+                e.Graphics.DrawPath(thumbBorder, thumbPath);
+            }
+            using (Pen grip = new Pen(UiTheme.InkMuted, 1.4f))
+            {
+                int gripTop = thumb.Y + 6;
+                int gripBottom = thumb.Bottom - 6;
+                for (int offset = -5; offset <= 5; offset += 5)
+                {
+                    e.Graphics.DrawLine(grip, thumbX + offset, gripTop, thumbX + offset, gripBottom);
+                }
+            }
+
+            if (Focused && ShowFocusCues)
+            {
+                using (Pen focus = new Pen(UiTheme.Focus, 1.2f))
+                {
+                    focus.DashStyle = DashStyle.Dot;
+                    e.Graphics.DrawRectangle(focus, shell.X, shell.Y, shell.Width, shell.Height);
+                }
             }
         }
 
@@ -3410,6 +3503,17 @@ namespace CreamyKeysDesktop
             base.OnMouseDown(e);
             if (e.Button == MouseButtons.Left)
             {
+                int buttonWidth = Math.Min(30, Math.Max(24, Height - 6));
+                if (e.X <= 3 + buttonWidth)
+                {
+                    Value = Math.Max(Minimum, Value - SmallChange);
+                    return;
+                }
+                if (e.X >= Width - buttonWidth - 3)
+                {
+                    Value = Math.Min(Maximum, Value + SmallChange);
+                    return;
+                }
                 _dragging = true;
                 Capture = true;
                 SetValueFromMouse(e.X);
@@ -3453,8 +3557,10 @@ namespace CreamyKeysDesktop
 
         private void SetValueFromMouse(int x)
         {
-            int left = 8;
-            int right = Math.Max(left + 1, Width - 8);
+            int buttonWidth = Math.Min(30, Math.Max(24, Height - 6));
+            int thumbHalf = 18;
+            int left = 3 + buttonWidth + 8 + thumbHalf;
+            int right = Math.Max(left + 1, Width - buttonWidth - 11 - thumbHalf);
             double ratio = (x - left) / (double)(right - left);
             ratio = Math.Max(0.0, Math.Min(1.0, ratio));
             int next = Minimum + (int)Math.Round((Maximum - Minimum) * ratio);
@@ -3469,16 +3575,70 @@ namespace CreamyKeysDesktop
         {
             if (Maximum <= Minimum)
             {
-                return 8;
+                return Width / 2;
             }
 
-            double ratio = (Value - Minimum) / (double)(Maximum - Minimum);
-            return 8 + (int)Math.Round((Width - 16) * ratio);
+            int buttonWidth = Math.Min(30, Math.Max(24, Height - 6));
+            int thumbHalf = 18;
+            int left = 3 + buttonWidth + 8 + thumbHalf;
+            int right = Math.Max(left + 1, Width - buttonWidth - 11 - thumbHalf);
+            double ratio = (_visualValue - Minimum) / (double)(Maximum - Minimum);
+            return left + (int)Math.Round((right - left) * ratio);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _animationTimer.Stop();
+                _animationTimer.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void AnimateValue(object sender, EventArgs e)
+        {
+            const float dt = 0.016f;
+            const float stiffness = 520.0f;
+            const float damping = 38.0f;
+            float displacement = _value - _visualValue;
+            _animationVelocity += (stiffness * displacement - damping * _animationVelocity) * dt;
+            _visualValue += _animationVelocity * dt;
+            if (Math.Abs(displacement) < 0.02f && Math.Abs(_animationVelocity) < 0.08f)
+            {
+                _visualValue = _value;
+                _animationVelocity = 0.0f;
+                _animationTimer.Stop();
+            }
+            Invalidate();
         }
 
         private int Clamp(int value)
         {
             return Math.Max(_minimum, Math.Min(_maximum, value));
+        }
+
+        private static void DrawArrow(Graphics graphics, Rectangle bounds, bool right)
+        {
+            int centerX = bounds.Left + (bounds.Width / 2);
+            int centerY = bounds.Top + (bounds.Height / 2);
+            Point[] points = right
+                ? new Point[]
+                {
+                    new Point(centerX - 3, centerY - 5),
+                    new Point(centerX + 4, centerY),
+                    new Point(centerX - 3, centerY + 5)
+                }
+                : new Point[]
+                {
+                    new Point(centerX + 3, centerY - 5),
+                    new Point(centerX - 4, centerY),
+                    new Point(centerX + 3, centerY + 5)
+                };
+            using (SolidBrush brush = new SolidBrush(UiTheme.TextPrimary))
+            {
+                graphics.FillPolygon(brush, points);
+            }
         }
 
         private static GraphicsPath RoundedRect(Rectangle r, int radius)
@@ -3570,23 +3730,23 @@ namespace CreamyKeysDesktop
             shell.Controls.Add(line);
 
             int y = 98;
-            y = AddRow(shell, y, "\u2699", "Settings", "", true, settings);
-            y = AddRow(shell, y, "\u23fb", enabled ? "Disable" : "Enable", "", false, toggleEnabled);
-            y = AddRow(shell, y, "\u266b", "Test sound", "", false, testSound);
+            y = AddRow(shell, y, "settings", "Settings", "", true, settings);
+            y = AddRow(shell, y, "power", enabled ? "Disable" : "Enable", "", false, toggleEnabled);
+            y = AddRow(shell, y, "volume-2", "Test sound", "", false, testSound);
             y = AddDivider(shell, y);
-            y = AddRow(shell, y, "\u25b8", "Preset", preset, false, settings);
-            y = AddRow(shell, y, "\u25b8", "Output volume", volume.ToString(CultureInfo.InvariantCulture) + "%", false, settings);
-            y = AddRow(shell, y, "\u25b8", "Key boost", keyBoost.ToString(CultureInfo.InvariantCulture) + "%", false, settings);
+            y = AddRow(shell, y, "chevron-right", "Preset", preset, false, settings);
+            y = AddRow(shell, y, "chevron-right", "Output volume", volume.ToString(CultureInfo.InvariantCulture) + "%", false, settings);
+            y = AddRow(shell, y, "chevron-right", "Key boost", keyBoost.ToString(CultureInfo.InvariantCulture) + "%", false, settings);
             y = AddDivider(shell, y);
-            y = AddRow(shell, y, startup ? "\u2713" : "", "Run at startup", "", false, toggleStartup);
-            y = AddRow(shell, y, repeat ? "\u2713" : "", "Held key repeat", "", false, toggleRepeat);
-            y = AddRow(shell, y, modifiers ? "\u2713" : "", "Shift / Ctrl / Alt", "", false, toggleModifiers);
-            y = AddRow(shell, y, ignoreInjected ? "\u2713" : "", "Ignore injected input", "", false, toggleInjected);
+            y = AddRow(shell, y, startup ? "check" : "circle", "Run at startup", "", false, toggleStartup);
+            y = AddRow(shell, y, repeat ? "check" : "circle", "Held key repeat", "", false, toggleRepeat);
+            y = AddRow(shell, y, modifiers ? "check" : "circle", "Shift / Ctrl / Alt", "", false, toggleModifiers);
+            y = AddRow(shell, y, ignoreInjected ? "check" : "circle", "Ignore injected input", "", false, toggleInjected);
             y = AddDivider(shell, y);
-            y = AddRow(shell, y, "\u25a3", "Open config folder", "", false, openConfig);
-            y = AddRow(shell, y, "\u26a1", "Run as admin", "", false, runAdmin);
+            y = AddRow(shell, y, "folder-open", "Open config folder", "", false, openConfig);
+            y = AddRow(shell, y, "shield", "Run as admin", "", false, runAdmin);
             y = AddDivider(shell, y);
-            AddRow(shell, y, "\u21b2", "Exit", "", false, exit);
+            AddRow(shell, y, "log-out", "Exit", "", false, exit);
         }
 
         protected override void OnDeactivate(EventArgs e)
@@ -3630,7 +3790,8 @@ namespace CreamyKeysDesktop
 
     internal sealed class TrayMenuRow : Control
     {
-        private readonly string _icon;
+        private readonly Image _iconLight;
+        private readonly Image _iconInk;
         private readonly string _label;
         private readonly string _detail;
         private readonly bool _active;
@@ -3638,7 +3799,8 @@ namespace CreamyKeysDesktop
 
         public TrayMenuRow(string icon, string label, string detail, bool active)
         {
-            _icon = icon ?? "";
+            _iconLight = LoadIcon(icon, "png-dark");
+            _iconInk = LoadIcon(icon, "png-ink");
             _label = label ?? "";
             _detail = detail ?? "";
             _active = active;
@@ -3682,11 +3844,11 @@ namespace CreamyKeysDesktop
             TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                 TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
 
-            Rectangle iconRect = new Rectangle(18, 0, 30, Height);
-            using (Font iconFont = UiTheme.BodyFont(10.2f, FontStyle.Regular))
+            Image icon = _active ? (_iconInk ?? _iconLight) : _iconLight;
+            if (icon != null)
             {
-                TextRenderer.DrawText(e.Graphics, _icon, iconFont, iconRect, fore,
-                    TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+                Rectangle iconRect = new Rectangle(16, (Height - 32) / 2, 32, 32);
+                e.Graphics.DrawImage(icon, iconRect);
             }
 
             int detailWidth = string.IsNullOrWhiteSpace(_detail) ? 0 :
@@ -3707,6 +3869,51 @@ namespace CreamyKeysDesktop
                         TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
                         TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
                 }
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                if (_iconLight != null)
+                {
+                    _iconLight.Dispose();
+                }
+                if (_iconInk != null)
+                {
+                    _iconInk.Dispose();
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        private static Image LoadIcon(string iconName, string palette)
+        {
+            if (string.IsNullOrWhiteSpace(iconName))
+            {
+                return null;
+            }
+            string path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "assets", "ui", "lucide", palette, iconName + ".png");
+            if (!File.Exists(path))
+            {
+                return null;
+            }
+            try
+            {
+                using (Image source = Image.FromFile(path))
+                {
+                    Color color = string.Equals(palette, "png-ink",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? UiTheme.Canvas
+                        : UiTheme.TextPrimary;
+                    return UiTheme.TintIcon(source, color);
+                }
+            }
+            catch
+            {
+                return null;
             }
         }
 
@@ -4218,6 +4425,13 @@ namespace CreamyKeysDesktop
             railMark.Height = 70;
             rail.Controls.Add(railMark);
 
+            RailCreditLabel railCredit = new RailCreditLabel();
+            railCredit.Text = "NTGH";
+            railCredit.Dock = DockStyle.Bottom;
+            railCredit.Height = 118;
+            railCredit.ForeColor = UiTheme.TextMuted;
+            rail.Controls.Add(railCredit);
+
             ModernPanel sidebar = new ModernPanel();
             sidebar.Dock = DockStyle.Fill;
             sidebar.Margin = Padding.Empty;
@@ -4525,21 +4739,29 @@ namespace CreamyKeysDesktop
             {
                 int width = deviceCard.ClientSize.Width;
                 bool compact = width < 760;
-                int controlsX = compact ? Math.Max(294, width - 278) : Math.Max(318, width - 478);
-                int comboX = controlsX + (compact ? 108 : 100);
+                int controlsX = compact ? Math.Max(228, width - 340) : Math.Max(318, width - 478);
+                int comboX = controlsX + (compact ? 80 : 100);
                 layoutLabel.Left = controlsX;
                 mouseLabel.Left = controlsX;
-                layoutLabel.Width = compact ? 104 : 96;
-                mouseLabel.Width = compact ? 104 : 96;
-                _keyboardLayoutCombo.SetBounds(comboX, 16, 112, 30);
-                _mouseStyleCombo.SetBounds(comboX, 53, 112, 30);
-                _editModeCheck.Text = compact ? "" : "Edit";
-                _autoDetectCheck.Text = compact ? "" : "Auto detect";
-                _editModeCheck.SetBounds(comboX + 128, 14, compact ? 40 : 190, 32);
-                _autoDetectCheck.SetBounds(comboX + 128, 51, compact ? 40 : 190, 32);
+                layoutLabel.Text = compact ? "Keys" : "Keyboard";
+                layoutLabel.Width = compact ? 80 : 96;
+                mouseLabel.Width = compact ? 80 : 96;
+                int comboWidth = compact ? 100 : 112;
+                _keyboardLayoutCombo.SetBounds(comboX, 16, comboWidth, 30);
+                _mouseStyleCombo.SetBounds(comboX, 53, comboWidth, 30);
+                int toggleX = comboX + comboWidth + (compact ? 10 : 16);
+                _editModeCheck.Text = "Edit";
+                _autoDetectCheck.Text = compact ? "Auto" : "Auto detect";
+                int toggleWidth = compact ? Math.Max(104, width - toggleX - 12) : 190;
+                _editModeCheck.SetBounds(toggleX, 14, toggleWidth, 32);
+                _autoDetectCheck.SetBounds(toggleX, 51, toggleWidth, 32);
                 _detectButton.SetBounds(Math.Max(12, width - 102), 84, 82, 34);
                 int waveWidth = Math.Max(130, Math.Min(286, controlsX - 42));
                 _pulseControl.Width = waveWidth;
+                deviceTitle.Width = Math.Max(150, controlsX - 44);
+                deviceSub.Text = compact ? "Keyboard + mouse" :
+                    "Separate packs for keyboard and mouse";
+                deviceSub.Width = Math.Max(150, controlsX - 44);
             };
             deviceCard.Resize += arrangeCard;
             arrangeCard(deviceCard, EventArgs.Empty);
@@ -5012,18 +5234,22 @@ namespace CreamyKeysDesktop
             behavior.Controls.Add(title);
 
             _playRepeatCheck = CreateLightCheck("Held key repeat", 28, 68);
+            _playRepeatCheck.Width = 280;
             _playRepeatCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_playRepeatCheck);
 
             _playModifiersCheck = CreateLightCheck("Shift / Ctrl / Alt", 322, 68);
+            _playModifiersCheck.Width = 280;
             _playModifiersCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_playModifiersCheck);
 
             _ignoreInjectedCheck = CreateLightCheck("Ignore injected input", 28, 110);
+            _ignoreInjectedCheck.Width = 280;
             _ignoreInjectedCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_ignoreInjectedCheck);
 
             _runStartupCheck = CreateLightCheck("Run at startup", 322, 110);
+            _runStartupCheck.Width = 280;
             _runStartupCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_runStartupCheck);
 
@@ -5059,10 +5285,12 @@ namespace CreamyKeysDesktop
             behavior.Controls.Add(_mouseLayersNumber);
 
             _reducedMotionCheck = CreateLightCheck("Reduce animations", 322, 242);
+            _reducedMotionCheck.Width = 280;
             _reducedMotionCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_reducedMotionCheck);
 
-            _showWelcomeCheck = CreateLightCheck("Show welcome pop-up", 28, 242);
+            _showWelcomeCheck = CreateLightCheck("Welcome pop-up", 28, 242);
+            _showWelcomeCheck.Width = 280;
             _showWelcomeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_showWelcomeCheck);
 
@@ -5070,7 +5298,7 @@ namespace CreamyKeysDesktop
             shadow.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             behaviorPage.Controls.Add(shadow);
 
-            Label shadowTitle = CreateCardTitle("Virtual device shadow", 24, 18, 260, 30);
+            Label shadowTitle = CreateCardTitle("Virtual device shadow", 24, 18, 320, 30);
             shadow.Controls.Add(shadowTitle);
 
             _shadowEnabledCheck = CreateLightCheck("Shadow enabled", 28, 62);
@@ -5348,7 +5576,7 @@ namespace CreamyKeysDesktop
             {
                 using (Image source = Image.FromFile(path))
                 {
-                    Bitmap image = new Bitmap(source);
+                    Bitmap image = UiTheme.TintIcon(source, UiTheme.TextPrimary);
                     _uiImages.Add(image);
                     button.Image = image;
                     button.ImageAlign = ContentAlignment.MiddleLeft;
@@ -7185,6 +7413,13 @@ namespace CreamyKeysDesktop
             Activate();
         }
 
+        internal void ShowFromExternalLaunch()
+        {
+            ShowSettings();
+            BringToFront();
+            SetForegroundWindow(Handle);
+        }
+
         private void ExitApplication()
         {
             _allowClose = true;
@@ -7280,6 +7515,9 @@ namespace CreamyKeysDesktop
 
         [DllImport("user32.dll")]
         private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out int lpdwProcessId);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         private sealed class PresetComboItem
         {

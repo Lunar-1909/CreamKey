@@ -77,7 +77,7 @@ Hierarchy comes primarily from tonal surfaces and 1px borders. Only the app shel
 
 ## Shapes
 
-Controls and cards use 6-12px radii. Buttons are rounded rectangles, not pills. The virtual keys use a smaller radius to preserve their physical-keycap character.
+Controls and cards use 6-12px radii. Buttons are rounded rectangles, not pills. The virtual keys use a smaller radius to preserve their physical-keycap character. Toggle switches and range sliders may use restrained vertical material shading to communicate physical depth; decorative page gradients remain out of scope.
 
 ## Components
 
@@ -99,13 +99,13 @@ Native Windows combo boxes and file dialogs are accepted platform-owned controls
 
 ### Iconography
 
-Use simple Segoe Fluent-style line glyphs with text labels for navigation and unfamiliar actions. Icons are never the only accessible name.
+Use Lucide line icons from the icon families supported by Morphicons, paired with text labels for navigation and unfamiliar actions. Native PNG masks are recolored at runtime for each surface, so icons remain legible without bringing a browser runtime into the desktop app. Icons are never the only accessible name.
 
 ### Motion
 
-Hover and slider feedback runs at 120-180ms. Page transitions use a 100-140ms directional slide with a cubic ease-out; the overlay is hosted by the form so it never participates in layout. Intro/loading motion uses 650-900ms for one orchestrated moment. All animations remain interruptible and can be disabled with the app's reduced-motion setting.
+Hover feedback runs at 120-180ms. Toggles, sliders, the navigation marker, and page transitions use velocity-aware damped spring motion adapted from Animate UI's Motion patterns. Page transitions run for about 250ms and remain in a form-hosted overlay so they never participate in layout. The startup experience uses a six-second video cut with a visible skip action and Escape support; a compact native splash is the playback fallback. All routine animations remain interruptible and can be disabled with the app's reduced-motion setting.
 
-Lucide icons are used as static native assets because Morphicons is a web SVG animation runtime. Icons support labels rather than replacing them, and the ISC license is bundled beside the sources.
+Morphicons itself is a web SVG morph runtime, so CreamyKeys uses compatible Lucide shapes as native assets rather than embedding a web view. Icons support labels rather than replacing them, and the Lucide ISC license is bundled beside the sources.
 
 ### Content and data visualization
 

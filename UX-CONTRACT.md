@@ -50,8 +50,9 @@
 | Save settings | `Save settings` | Stable busy state when needed | Same page | Status bar | Keep values; show actionable error | Trigger | Runtime contract |
 | Import settings | `Import` | Loading overlay | Same page with imported values | Status bar | Keep current config; explain invalid file | Trigger | Runtime contract |
 | Export settings | `Export` | Stable button | Same page | Status bar | Explain path/write failure | Trigger | Runtime contract |
-| Switch page | Sidebar icon and page label | 100-140ms directional slide | Selected panel | Sliding mint marker | Keep current panel on failure | Selected nav item | `DESIGN.md` |
+| Switch page | Sidebar icon and page label | ~250ms damped spring slide | Selected panel | Spring-driven mint marker | Keep current panel on failure | Selected nav item | `DESIGN.md` |
 | Hide app | `Hide to tray` | None | System tray | Tray state | Reopen from tray | Main window | Runtime contract |
+| Launch while running | Open `CreamyKeys.exe` again | Named activation event | Existing main window | Window restored and focused | Keep tray process alive | Main window | Runtime contract |
 
 ## Navigation and responsive behavior
 
@@ -69,6 +70,7 @@
 
 ## Async and resilience
 
+- Startup presents the bundled six-second trailer with `Skip intro` and Escape; playback failure falls back to the native staged splash.
 - Startup loading is determinate by named stages, not a fake percentage.
 - Very fast work avoids flashing the overlay.
 - Import is pessimistic: validate and normalize a temporary config before applying it.

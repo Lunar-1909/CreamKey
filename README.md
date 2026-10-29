@@ -39,8 +39,9 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - CreamyKeys sound presets extracted from the Minecraft mod assets.
 - Volume and pitch variation on every trigger for a less static sound.
 - Tray menu with settings, enable/disable, test sound, startup, admin, and exit actions.
-- Startup loading screen, optional welcome pop-up, built-in user guide, and a live curved sound waveform.
-- Smooth slide page transitions, a moving sidebar indicator, animated toggles, buttons, and sliders, with a reduced-motion option.
+- Six-second startup trailer with Skip/Escape controls, a native fallback loading screen, optional welcome pop-up, built-in user guide, and a live curved sound waveform.
+- Damped spring page transitions inspired by Animate UI, plus smooth navigation, toggle, button, and slider motion with a reduced-motion option.
+- Single-instance activation: opening `CreamyKeys.exe` again restores the existing GUI instead of showing another process or warning.
 - Virtual keyboard that lights up when you press physical keys.
 - Virtual mouse that lights up when you click physical mouse buttons.
 - Keyboard layouts: laptop, 60%, tenkeyless, and full size.
@@ -93,7 +94,7 @@ Use this page to tune how input is handled:
 - **Max voices** limits overlapping sounds.
 - **Keyboard layers** and **Mouse layers** stack 1-16 random samples per input, like the mod's amplify controls.
 - **Reduce animations** keeps navigation immediate and disables decorative transitions.
-- **Show welcome pop-up** controls whether the welcome screen appears at startup.
+- **Welcome pop-up** controls whether the welcome screen appears at startup.
 
 ### Allowed Apps
 
@@ -131,7 +132,7 @@ After importing, review the selected sound packs if the destination computer has
 
 ## Welcome Pop-up And User Guide
 
-The welcome pop-up uses the CreamyKeys app icon and includes a **Do not show again** switch. You can re-enable it at any time from **Behavior > Show welcome pop-up**.
+The welcome pop-up uses the CreamyKeys app icon and includes a **Do not show again** switch. You can re-enable it at any time from **Behavior > Welcome pop-up**.
 
 Open **User guide** in the sidebar for in-app instructions covering quick start, sound variation, behavior, allowed apps, tray controls, and settings transfer.
 
@@ -240,3 +241,5 @@ Inspired by the CreamyKeys Minecraft mod.
 Idea: CreamyKeys mod - Minecraft
 
 Interface icons are from [Lucide](https://lucide.dev/) under the ISC license. Morphicons was used as the icon-set reference; its web animation runtime is not bundled into this native WinForms app.
+
+Motion behavior is adapted for native WinForms from the damped-spring interaction style demonstrated by [Animate UI](https://animate-ui.com/). UI terminology and control selection were cross-checked against [Name That UI](https://namethatui.com/).
