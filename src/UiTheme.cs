@@ -302,6 +302,7 @@ namespace CreamyKeysDesktop
         private float _targetValue;
         private float _animationVelocity;
         private bool _hovered;
+        private bool _pressed;
         private bool _darkSurface;
 
         public ThemeToggle()
@@ -356,6 +357,24 @@ namespace CreamyKeysDesktop
         {
             base.OnMouseLeave(e);
             _hovered = false;
+            _pressed = false;
+            Invalidate();
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            base.OnMouseDown(e);
+            if (e.Button == MouseButtons.Left && Enabled)
+            {
+                _pressed = true;
+                Invalidate();
+            }
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            _pressed = false;
             Invalidate();
         }
 
@@ -370,7 +389,9 @@ namespace CreamyKeysDesktop
             }
 
             bool compact = string.IsNullOrWhiteSpace(Text);
-            int trackWidth = compact ? Math.Max(34, Math.Min(58, Width - 2)) : 58;
+            int trackWidth = compact
+                ? Math.Max(34, Math.Min(58, Width - 2))
+                : (Width < 140 ? 48 : 58);
             Rectangle track = new Rectangle(1, 3, trackWidth, 26);
             Color trackOff = _darkSurface
                 ? UiTheme.Blend(UiTheme.Border, UiTheme.SurfaceElevated, 0.34f)
@@ -379,6 +400,10 @@ namespace CreamyKeysDesktop
             if (_hovered && Enabled)
             {
                 trackColor = UiTheme.Blend(trackColor, Color.White, 0.08f);
+            }
+            if (_pressed && Enabled)
+            {
+                trackColor = UiTheme.Blend(trackColor, Color.Black, 0.10f);
             }
             if (!Enabled)
             {
@@ -400,8 +425,9 @@ namespace CreamyKeysDesktop
             int knobWidth = compact && trackWidth < 50 ? 20 : 30;
             int travel = Math.Max(0, track.Width - knobWidth - 4);
             int knobX = track.X + 2 + (int)Math.Round(travel * _visualValue);
-            Rectangle knobShadow = new Rectangle(knobX, track.Y + 4, knobWidth, track.Height - 3);
-            Rectangle knob = new Rectangle(knobX, track.Y + 2, knobWidth, track.Height - 4);
+            int pressOffset = _pressed ? 1 : 0;
+            Rectangle knobShadow = new Rectangle(knobX, track.Y + 4 + pressOffset, knobWidth, track.Height - 3);
+            Rectangle knob = new Rectangle(knobX, track.Y + 2 + pressOffset, knobWidth, track.Height - 4);
             using (GraphicsPath shadowPath = UiTheme.RoundedRect(knobShadow, knobShadow.Height / 2))
             using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(52, 0, 0, 0)))
             {
@@ -457,7 +483,7 @@ namespace CreamyKeysDesktop
         {
             const float dt = 0.016f;
             const float stiffness = 520.0f;
-            const float damping = 36.0f;
+            const float damping = 46.0f;
             float distance = _targetValue - _visualValue;
             _animationVelocity += (stiffness * distance - damping * _animationVelocity) * dt;
             _visualValue += _animationVelocity * dt;
@@ -622,7 +648,7 @@ namespace CreamyKeysDesktop
         {
             const float dt = 0.016f;
             const float stiffness = 410.0f;
-            const float damping = 30.0f;
+            const float damping = 41.0f;
             float distance = _targetTop - _visualTop;
             _velocity += (stiffness * distance - damping * _velocity) * dt;
             _visualTop += _velocity * dt;
@@ -1043,10 +1069,224 @@ namespace CreamyKeysDesktop
         }
     }
 
+    internal sealed class LoopingVideoSurface : Panel
+    {
+        private readonly PictureBox _poster;
+        private readonly System.Windows.Forms.Integration.ElementHost _mediaHost = null;
+        private readonly System.Windows.Controls.MediaElement _media = null;
+        private readonly bool _captureMode;
+        private bool _muted;
+
+        public LoopingVideoSurface(string videoPath, string posterPath)
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+            BackColor = UiTheme.Canvas;
+            _muted = true;
+            _captureMode = IsCaptureMode();
+
+            _poster = new PictureBox();
+            _poster.BackColor = UiTheme.Canvas;
+            _poster.SizeMode = PictureBoxSizeMode.Zoom;
+            _poster.Image = LoadImage(posterPath);
+            Controls.Add(_poster);
+
+            if (_captureMode || string.IsNullOrWhiteSpace(videoPath) || !File.Exists(videoPath))
+            {
+                return;
+            }
+
+            _mediaHost = new System.Windows.Forms.Integration.ElementHost();
+            _mediaHost.BackColor = UiTheme.Canvas;
+            _mediaHost.Visible = false;
+
+            System.Windows.Controls.Grid root = new System.Windows.Controls.Grid();
+            root.Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(17, 20, 18));
+
+            _media = new System.Windows.Controls.MediaElement();
+            _media.LoadedBehavior = System.Windows.Controls.MediaState.Manual;
+            _media.UnloadedBehavior = System.Windows.Controls.MediaState.Stop;
+            _media.Stretch = System.Windows.Media.Stretch.Uniform;
+            _media.ScrubbingEnabled = true;
+            _media.Volume = 0.0;
+            _media.Source = new Uri(videoPath, UriKind.Absolute);
+            _media.MediaOpened += delegate
+            {
+                if (IsDisposed)
+                {
+                    return;
+                }
+                _poster.Visible = false;
+                _mediaHost.Visible = true;
+                _mediaHost.BringToFront();
+            };
+            _media.MediaEnded += delegate
+            {
+                try
+                {
+                    _media.Position = TimeSpan.Zero;
+                    _media.Play();
+                }
+                catch
+                {
+                    ShowPosterFallback();
+                }
+            };
+            _media.MediaFailed += delegate { ShowPosterFallback(); };
+            root.Children.Add(_media);
+
+            System.Windows.Controls.Border badge = new System.Windows.Controls.Border();
+            badge.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
+            badge.VerticalAlignment = System.Windows.VerticalAlignment.Top;
+            badge.Margin = new System.Windows.Thickness(0, 16, 16, 0);
+            badge.Padding = new System.Windows.Thickness(10, 5, 10, 5);
+            badge.CornerRadius = new System.Windows.CornerRadius(7);
+            badge.Background = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromArgb(220, 27, 32, 29));
+            badge.BorderBrush = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(80, 213, 164));
+            badge.BorderThickness = new System.Windows.Thickness(1);
+
+            System.Windows.Controls.TextBlock badgeText = new System.Windows.Controls.TextBlock();
+            badgeText.Text = "1080P  /  LOOP";
+            badgeText.Foreground = new System.Windows.Media.SolidColorBrush(
+                System.Windows.Media.Color.FromRgb(247, 249, 248));
+            badgeText.FontFamily = new System.Windows.Media.FontFamily("Segoe UI Variable Text");
+            badgeText.FontSize = 11.0;
+            badgeText.FontWeight = System.Windows.FontWeights.SemiBold;
+            badge.Child = badgeText;
+            root.Children.Add(badge);
+
+            _mediaHost.Child = root;
+            Controls.Add(_mediaHost);
+            _mediaHost.BringToFront();
+        }
+
+        public bool Muted
+        {
+            get { return _muted; }
+            set
+            {
+                _muted = value;
+                if (_media != null)
+                {
+                    _media.Volume = value ? 0.0 : 0.72;
+                }
+            }
+        }
+
+        public void StartPlayback()
+        {
+            if (_media == null || _captureMode)
+            {
+                return;
+            }
+            try
+            {
+                _media.Play();
+            }
+            catch
+            {
+                ShowPosterFallback();
+            }
+        }
+
+        protected override void OnResize(EventArgs eventargs)
+        {
+            base.OnResize(eventargs);
+            Rectangle childBounds = new Rectangle(1, 1,
+                Math.Max(1, ClientSize.Width - 2), Math.Max(1, ClientSize.Height - 2));
+            _poster.Bounds = childBounds;
+            if (_mediaHost != null)
+            {
+                _mediaHost.Bounds = childBounds;
+            }
+
+            Region oldRegion = Region;
+            using (GraphicsPath path = UiTheme.RoundedRect(ClientRectangle, 12))
+            {
+                Region = new Region(path);
+            }
+            if (oldRegion != null)
+            {
+                oldRegion.Dispose();
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    if (_media != null)
+                    {
+                        _media.Stop();
+                    }
+                }
+                catch
+                {
+                }
+                if (_poster.Image != null)
+                {
+                    _poster.Image.Dispose();
+                    _poster.Image = null;
+                }
+            }
+            base.Dispose(disposing);
+        }
+
+        private void ShowPosterFallback()
+        {
+            if (IsDisposed)
+            {
+                return;
+            }
+            _mediaHost.Visible = false;
+            _poster.Visible = true;
+            _poster.BringToFront();
+        }
+
+        private static Image LoadImage(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                return null;
+            }
+            try
+            {
+                using (Image source = Image.FromFile(path))
+                {
+                    return new Bitmap(source);
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static bool IsCaptureMode()
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            for (int i = 0; i < args.Length; i++)
+            {
+                if (string.Equals(args[i], "--capture-ui", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     internal sealed class WelcomeForm : Form
     {
         private readonly SoundPulseControl _pulse;
         private readonly ThemeToggle _doNotShowAgain;
+        private readonly ThemeToggle _trailerSound;
+        private readonly LoopingVideoSurface _trailer;
 
         public WelcomeForm(Icon icon, EventHandler testSound)
         {
@@ -1056,74 +1296,115 @@ namespace CreamyKeysDesktop
             MaximizeBox = false;
             MinimizeBox = false;
             ShowInTaskbar = false;
-            ClientSize = new Size(860, 570);
+            KeyPreview = true;
+            ClientSize = new Size(1080, 640);
             BackColor = UiTheme.Canvas;
             ForeColor = UiTheme.TextPrimary;
             Font = UiTheme.BodyFont(9.5f, FontStyle.Regular);
             Icon = icon;
 
-            Panel visual = new Panel();
-            visual.BackColor = UiTheme.Surface;
-            visual.Dock = DockStyle.Left;
-            visual.Width = 320;
-            Controls.Add(visual);
-
             PictureBox mark = new PictureBox();
             mark.Image = icon == null ? SystemIcons.Application.ToBitmap() : icon.ToBitmap();
             mark.SizeMode = PictureBoxSizeMode.Zoom;
-            mark.SetBounds(30, 34, 60, 60);
-            visual.Controls.Add(mark);
+            mark.SetBounds(26, 18, 44, 44);
+            Controls.Add(mark);
 
-            Label visualTitle = new Label();
-            visualTitle.Text = "Every key\nfeels different.";
-            visualTitle.ForeColor = UiTheme.TextPrimary;
-            visualTitle.Font = UiTheme.DisplayFont(19.0f, FontStyle.Bold);
-            visualTitle.SetBounds(30, 126, 258, 116);
-            visual.Controls.Add(visualTitle);
+            Label brand = new Label();
+            brand.Text = "CreamyKeys";
+            brand.ForeColor = UiTheme.TextPrimary;
+            brand.Font = UiTheme.DisplayFont(13.0f, FontStyle.Bold);
+            brand.SetBounds(84, 14, 240, 30);
+            Controls.Add(brand);
+
+            Label brandCaption = new Label();
+            brandCaption.Text = "Welcome  /  desktop sound studio";
+            brandCaption.ForeColor = UiTheme.TextMuted;
+            brandCaption.SetBounds(86, 42, 340, 24);
+            Controls.Add(brandCaption);
+
+            Label live = new Label();
+            live.Text = "●  PRODUCT TOUR";
+            live.ForeColor = UiTheme.Action;
+            live.Font = UiTheme.BodyFont(8.2f, FontStyle.Bold);
+            live.TextAlign = ContentAlignment.MiddleRight;
+            live.SetBounds(820, 24, 234, 28);
+            Controls.Add(live);
+
+            string uiAssets = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets", "ui");
+            _trailer = new LoopingVideoSurface(
+                Path.Combine(uiAssets, "welcome-trailer-1080p.mp4"),
+                Path.Combine(uiAssets, "welcome-trailer-poster.png"));
+            _trailer.SetBounds(26, 88, 650, 366);
+            Controls.Add(_trailer);
+
+            Label trailerCaption = new Label();
+            trailerCaption.Text = "1080P PRODUCT TOUR  /  LOOPS WHILE WELCOME IS OPEN";
+            trailerCaption.ForeColor = UiTheme.TextMuted;
+            trailerCaption.Font = UiTheme.BodyFont(7.8f, FontStyle.Bold);
+            trailerCaption.SetBounds(28, 466, 620, 24);
+            Controls.Add(trailerCaption);
 
             _pulse = new SoundPulseControl();
-            _pulse.SetBounds(30, 260, 258, 82);
-            visual.Controls.Add(_pulse);
+            _pulse.BackColor = UiTheme.Surface;
+            _pulse.SetBounds(26, 500, 650, 68);
+            Controls.Add(_pulse);
 
-            Label caption = new Label();
-            caption.Text = "Randomized samples, pitch, volume and layers create natural variation.";
-            caption.ForeColor = UiTheme.TextMuted;
-            caption.SetBounds(30, 368, 254, 92);
-            visual.Controls.Add(caption);
+            Label pulseCaption = new Label();
+            pulseCaption.Text = "Press Test sound to hear a shuffled sample and watch the live signal respond.";
+            pulseCaption.ForeColor = UiTheme.TextMuted;
+            pulseCaption.SetBounds(28, 580, 630, 34);
+            Controls.Add(pulseCaption);
 
-            Panel content = new Panel();
-            content.BackColor = UiTheme.Content;
-            content.Dock = DockStyle.Fill;
-            content.Padding = new Padding(42, 34, 42, 30);
+            ModernPanel content = new ModernPanel();
+            content.FillColor = UiTheme.SurfaceElevated;
+            content.BorderColor = UiTheme.Border;
+            content.CornerRadius = 12;
+            content.SetBounds(702, 88, 352, 526);
             Controls.Add(content);
-            content.BringToFront();
+
+            Label eyebrow = new Label();
+            eyebrow.Text = "START HERE";
+            eyebrow.ForeColor = UiTheme.Action;
+            eyebrow.Font = UiTheme.BodyFont(8.0f, FontStyle.Bold);
+            eyebrow.SetBounds(24, 22, 284, 24);
+            content.Controls.Add(eyebrow);
 
             Label title = new Label();
-            title.Text = "Meet CreamyKeys";
-            title.ForeColor = UiTheme.Ink;
+            title.Text = "Set the feel.";
+            title.ForeColor = UiTheme.TextPrimary;
             title.Font = UiTheme.DisplayFont(18.0f, FontStyle.Bold);
-            title.SetBounds(42, 34, 430, 54);
+            title.UseCompatibleTextRendering = true;
+            title.SetBounds(24, 48, 294, 72);
             content.Controls.Add(title);
 
             Label intro = new Label();
-            intro.Text = "Choose a sound pack, tune how much it varies, then keep CreamyKeys quietly in the tray.";
-            intro.ForeColor = UiTheme.InkMuted;
-            intro.SetBounds(44, 92, 414, 72);
+            intro.Text = "Choose a sound pack, tune its variation, then leave CreamyKeys running quietly in the tray.";
+            intro.ForeColor = UiTheme.TextMuted;
+            intro.SetBounds(24, 126, 296, 58);
             content.Controls.Add(intro);
 
-            AddFeature(content, 44, 172, "01", "Pick a feel", "Use separate sound packs for keyboard and mouse.");
-            AddFeature(content, 44, 260, "02", "Make it natural", "No-repeat shuffle, pitch, volume and layers add variation.");
-            AddFeature(content, 44, 348, "03", "Control where it plays", "Choose which games and apps can trigger sound.");
+            AddFeature(content, 24, 194, "01", "Pick a feel", "Separate keyboard and mouse packs.");
+            AddFeature(content, 24, 256, "02", "Make it natural", "Shuffle, pitch, volume and layers.");
+            AddFeature(content, 24, 318, "03", "Choose where it plays", "Allow games and apps from one list.");
 
             _doNotShowAgain = new ThemeToggle();
             _doNotShowAgain.Text = "Do not show again";
-            _doNotShowAgain.DarkSurface = false;
-            _doNotShowAgain.SetBounds(44, 442, 260, 32);
+            _doNotShowAgain.DarkSurface = true;
+            _doNotShowAgain.BackColor = UiTheme.SurfaceElevated;
+            _doNotShowAgain.SetBounds(24, 384, 296, 32);
             content.Controls.Add(_doNotShowAgain);
 
+            _trailerSound = new ThemeToggle();
+            _trailerSound.Text = "Trailer sound";
+            _trailerSound.DarkSurface = true;
+            _trailerSound.BackColor = UiTheme.SurfaceElevated;
+            _trailerSound.SetBounds(24, 422, 296, 32);
+            _trailerSound.CheckedChanged += delegate { _trailer.Muted = !_trailerSound.Checked; };
+            content.Controls.Add(_trailerSound);
+
             ThemeButton test = new ThemeButton();
-            test.Text = "Test a sound";
-            test.SetBounds(44, 496, 154, 42);
+            test.Text = "Test sound";
+            test.SetBounds(24, 468, 118, 42);
             test.Click += delegate(object sender, EventArgs e)
             {
                 _pulse.Pulse(1.0f);
@@ -1137,14 +1418,27 @@ namespace CreamyKeysDesktop
             ThemeButton start = new ThemeButton();
             start.Text = "Open CreamyKeys";
             start.Accent = true;
-            start.SetBounds(218, 496, 210, 42);
-            start.Click += delegate(object sender, EventArgs e)
+            start.Font = UiTheme.BodyFont(8.0f, FontStyle.Bold);
+            start.SetBounds(152, 468, 176, 42);
+            start.Click += delegate
             {
                 DialogResult = DialogResult.OK;
                 Close();
             };
             content.Controls.Add(start);
 
+            Shown += delegate
+            {
+                BeginInvoke((MethodInvoker)delegate { _trailer.StartPlayback(); });
+            };
+            KeyDown += delegate(object sender, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape)
+                {
+                    Close();
+                    e.Handled = true;
+                }
+            };
             AcceptButton = start;
             CancelButton = null;
         }
@@ -1158,22 +1452,23 @@ namespace CreamyKeysDesktop
         {
             Label index = new Label();
             index.Text = number;
-            index.ForeColor = UiTheme.ActionActive;
-            index.Font = UiTheme.BodyFont(8.5f, FontStyle.Bold);
-            index.SetBounds(x, y + 2, 38, 24);
+            index.ForeColor = UiTheme.Action;
+            index.Font = UiTheme.BodyFont(8.2f, FontStyle.Bold);
+            index.TextAlign = ContentAlignment.TopLeft;
+            index.SetBounds(x, y + 1, 38, 24);
             parent.Controls.Add(index);
 
             Label heading = new Label();
             heading.Text = title;
-            heading.ForeColor = UiTheme.Ink;
-            heading.Font = UiTheme.BodyFont(10.0f, FontStyle.Bold);
-            heading.SetBounds(x + 44, y, 360, 26);
+            heading.ForeColor = UiTheme.TextPrimary;
+            heading.Font = UiTheme.BodyFont(9.4f, FontStyle.Bold);
+            heading.SetBounds(x + 42, y, 248, 24);
             parent.Controls.Add(heading);
 
             Label body = new Label();
             body.Text = text;
-            body.ForeColor = UiTheme.InkMuted;
-            body.SetBounds(x + 44, y + 28, 378, 58);
+            body.ForeColor = UiTheme.TextMuted;
+            body.SetBounds(x + 42, y + 25, 252, 28);
             parent.Controls.Add(body);
         }
     }
@@ -1319,10 +1614,12 @@ namespace CreamyKeysDesktop
 
     internal sealed class PageTransitionOverlay : Control
     {
+        private static PageTransitionOverlay _activeOverlay;
         private readonly Bitmap _oldFrame;
         private readonly Bitmap _newFrame;
         private readonly System.Windows.Forms.Timer _timer;
         private float _progress;
+        private float _velocity;
 
         private readonly Control _target;
         private readonly int _direction;
@@ -1361,8 +1658,23 @@ namespace CreamyKeysDesktop
             }
 
             target.Refresh();
-            Bitmap oldFrame = new Bitmap(target.Width, target.Height);
-            target.DrawToBitmap(oldFrame, target.ClientRectangle);
+            Bitmap oldFrame;
+            PageTransitionOverlay active = _activeOverlay;
+            if (active != null && !active.IsDisposed && active._target == target &&
+                active.Width == target.Width && active.Height == target.Height)
+            {
+                oldFrame = active.CaptureCurrentFrame();
+                active.RemoveOverlay(false);
+            }
+            else
+            {
+                if (active != null && !active.IsDisposed)
+                {
+                    active.RemoveOverlay(true);
+                }
+                oldFrame = new Bitmap(target.Width, target.Height);
+                target.DrawToBitmap(oldFrame, target.ClientRectangle);
+            }
             switchPage();
             target.Refresh();
             Bitmap newFrame = new Bitmap(target.Width, target.Height);
@@ -1377,6 +1689,7 @@ namespace CreamyKeysDesktop
             Rectangle bounds = new Rectangle(origin, target.Size);
             PageTransitionOverlay overlay = new PageTransitionOverlay(target, host, bounds,
                 oldFrame, newFrame, direction);
+            _activeOverlay = overlay;
             host.Controls.Add(overlay);
             overlay.BringToFront();
             overlay._timer.Start();
@@ -1385,8 +1698,8 @@ namespace CreamyKeysDesktop
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(BackColor);
-            float eased = SpringProgress(_progress);
-            float opacity = 1.0f - (float)Math.Pow(1.0f - _progress, 3.0f);
+            float eased = Math.Max(0.0f, Math.Min(1.0f, _progress));
+            float opacity = eased * eased * (3.0f - (2.0f * eased));
             int travel = Math.Max(24, Math.Min(82, Width / 10));
             int oldX = (int)Math.Round(-_direction * eased * travel);
             int newX = (int)Math.Round(_direction * (1.0f - eased) * travel);
@@ -1415,37 +1728,52 @@ namespace CreamyKeysDesktop
                 _timer.Dispose();
                 _oldFrame.Dispose();
                 _newFrame.Dispose();
+                if (ReferenceEquals(_activeOverlay, this))
+                {
+                    _activeOverlay = null;
+                }
             }
             base.Dispose(disposing);
         }
 
         private void TickAnimation(object sender, EventArgs e)
         {
-            _progress += 0.0625f;
-            if (_progress >= 1.0f)
+            const float dt = 0.016f;
+            const float stiffness = 360.0f;
+            const float damping = 38.0f;
+            float distance = 1.0f - _progress;
+            _velocity += (stiffness * distance - damping * _velocity) * dt;
+            _progress += _velocity * dt;
+            if (Math.Abs(distance) < 0.002f && Math.Abs(_velocity) < 0.025f)
             {
                 _progress = 1.0f;
-                _timer.Stop();
-                if (Parent != null)
-                {
-                    Parent.Controls.Remove(this);
-                }
-                if (_target != null && !_target.IsDisposed)
-                {
-                    _target.Invalidate(true);
-                    _target.Update();
-                }
-                Dispose();
+                _velocity = 0.0f;
+                RemoveOverlay(true);
                 return;
             }
             Invalidate();
         }
 
-        private static float SpringProgress(float progress)
+        private Bitmap CaptureCurrentFrame()
         {
-            float t = Math.Max(0.0f, Math.Min(1.0f, progress));
-            double value = 1.0 - Math.Exp(-7.2 * t) * Math.Cos(10.5 * t);
-            return Math.Max(0.0f, Math.Min(1.035f, (float)value));
+            Bitmap frame = new Bitmap(Math.Max(1, Width), Math.Max(1, Height));
+            DrawToBitmap(frame, ClientRectangle);
+            return frame;
+        }
+
+        private void RemoveOverlay(bool refreshTarget)
+        {
+            _timer.Stop();
+            if (Parent != null)
+            {
+                Parent.Controls.Remove(this);
+            }
+            if (refreshTarget && _target != null && !_target.IsDisposed)
+            {
+                _target.Invalidate(true);
+                _target.Update();
+            }
+            Dispose();
         }
     }
 }

@@ -13,9 +13,9 @@ Download the latest portable build from the GitHub Releases page:
 
 Extract the zip, then run `CreamyKeys.exe`.
 
-Watch the 18-second 1080p product trailer from the latest Release:
+Watch the 18-second 1080p product trailer from the latest Release. The same trailer now loops inside the welcome pop-up, starts muted, and can be unmuted without leaving onboarding:
 
-- `CreamyKeys-trailer-v1.2.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
+- `CreamyKeys-trailer-v1.4.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
 
 ## Quick Start
 
@@ -39,8 +39,8 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - CreamyKeys sound presets extracted from the Minecraft mod assets.
 - Volume and pitch variation on every trigger for a less static sound.
 - Tray menu with settings, enable/disable, test sound, startup, admin, and exit actions.
-- Six-second startup trailer with Skip/Escape controls, a native fallback loading screen, optional welcome pop-up, built-in user guide, and a live curved sound waveform.
-- Damped spring page transitions inspired by Animate UI, plus smooth navigation, toggle, button, and slider motion with a reduced-motion option.
+- Six-second startup trailer with Skip/Escape controls, a native fallback loading screen, and an optional welcome pop-up with a looping 1080p product tour, static poster fallback, built-in guide, and live curved sound waveform.
+- Critically damped, interruptible page transitions inspired by Animate UI and Apple fluid-interface principles, plus immediate press feedback and a reduced-motion option.
 - Single-instance activation: opening `CreamyKeys.exe` again restores the existing GUI instead of showing another process or warning.
 - Virtual keyboard that lights up when you press physical keys.
 - Virtual mouse that lights up when you click physical mouse buttons.
@@ -132,7 +132,7 @@ After importing, review the selected sound packs if the destination computer has
 
 ## Welcome Pop-up And User Guide
 
-The welcome pop-up uses the CreamyKeys app icon and includes a **Do not show again** switch. You can re-enable it at any time from **Behavior > Welcome pop-up**.
+The welcome pop-up uses the CreamyKeys app icon, loops the bundled 1080p product tour, and includes separate **Trailer sound** and **Do not show again** switches. The trailer starts muted and falls back to a branded poster if Windows cannot decode it. You can re-enable the welcome pop-up at any time from **Behavior > Welcome pop-up**.
 
 Open **User guide** in the sidebar for in-app instructions covering quick start, sound variation, behavior, allowed apps, tray controls, and settings transfer.
 

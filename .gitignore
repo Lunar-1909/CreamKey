@@ -1,6 +1,9 @@
 # Build output
 dist/
 CreamyKeys-portable.zip
+CreamyKeys-portable-v*.zip
+CreamyKeys-v*.exe
+CreamyKeys-trailer-v*.mp4
 *.pdb
 .release-staging/
 

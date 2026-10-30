@@ -3306,6 +3306,7 @@ namespace CreamyKeysDesktop
         private int _tickFrequency;
         private TickStyle _tickStyle;
         private bool _dragging;
+        private int _pressedZone;
         private float _visualValue;
         private float _animationVelocity;
 
@@ -3325,6 +3326,7 @@ namespace CreamyKeysDesktop
             _largeChange = 5;
             _tickFrequency = 10;
             _tickStyle = TickStyle.None;
+            _pressedZone = -1;
             _animationTimer = new System.Windows.Forms.Timer();
             _animationTimer.Interval = 16;
             _animationTimer.Tick += AnimateValue;
@@ -3428,12 +3430,19 @@ namespace CreamyKeysDesktop
             Rectangle leftButton = new Rectangle(shell.X + 2, shell.Y + 2, buttonWidth, shell.Height - 4);
             Rectangle rightButton = new Rectangle(shell.Right - buttonWidth - 2, shell.Y + 2,
                 buttonWidth, shell.Height - 4);
+            Color leftFill = _pressedZone == 0
+                ? UiTheme.Blend(UiTheme.Surface, Color.Black, 0.12f)
+                : UiTheme.Surface;
+            Color rightFill = _pressedZone == 2
+                ? UiTheme.Blend(UiTheme.Surface, Color.Black, 0.12f)
+                : UiTheme.Surface;
             using (GraphicsPath leftPath = RoundedRect(leftButton, 5))
             using (GraphicsPath rightPath = RoundedRect(rightButton, 5))
-            using (SolidBrush buttonBrush = new SolidBrush(UiTheme.Surface))
+            using (SolidBrush leftBrush = new SolidBrush(leftFill))
+            using (SolidBrush rightBrush = new SolidBrush(rightFill))
             {
-                e.Graphics.FillPath(buttonBrush, leftPath);
-                e.Graphics.FillPath(buttonBrush, rightPath);
+                e.Graphics.FillPath(leftBrush, leftPath);
+                e.Graphics.FillPath(rightBrush, rightPath);
             }
             DrawArrow(e.Graphics, leftButton, false);
             DrawArrow(e.Graphics, rightButton, true);
@@ -3461,9 +3470,10 @@ namespace CreamyKeysDesktop
             }
 
             int thumbWidth = Math.Min(42, Math.Max(32, trackRect.Width / 5));
-            Rectangle thumbShadow = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 6,
+            int thumbPressOffset = _pressedZone == 1 ? 1 : 0;
+            Rectangle thumbShadow = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 6 + thumbPressOffset,
                 thumbWidth, shell.Height - 7);
-            Rectangle thumb = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 3,
+            Rectangle thumb = new Rectangle(thumbX - (thumbWidth / 2), shell.Y + 3 + thumbPressOffset,
                 thumbWidth, shell.Height - 8);
             using (GraphicsPath shadowPath = RoundedRect(thumbShadow, 5))
             using (SolidBrush shadowBrush = new SolidBrush(Color.FromArgb(54, 0, 0, 0)))
@@ -3506,16 +3516,24 @@ namespace CreamyKeysDesktop
                 int buttonWidth = Math.Min(30, Math.Max(24, Height - 6));
                 if (e.X <= 3 + buttonWidth)
                 {
+                    _pressedZone = 0;
+                    Capture = true;
+                    Invalidate();
                     Value = Math.Max(Minimum, Value - SmallChange);
                     return;
                 }
                 if (e.X >= Width - buttonWidth - 3)
                 {
+                    _pressedZone = 2;
+                    Capture = true;
+                    Invalidate();
                     Value = Math.Min(Maximum, Value + SmallChange);
                     return;
                 }
+                _pressedZone = 1;
                 _dragging = true;
                 Capture = true;
+                Invalidate();
                 SetValueFromMouse(e.X);
             }
         }
@@ -3533,7 +3551,20 @@ namespace CreamyKeysDesktop
         {
             base.OnMouseUp(e);
             _dragging = false;
+            _pressedZone = -1;
             Capture = false;
+            Invalidate();
+        }
+
+        protected override void OnMouseCaptureChanged(EventArgs e)
+        {
+            base.OnMouseCaptureChanged(e);
+            if (!Capture && _pressedZone >= 0)
+            {
+                _dragging = false;
+                _pressedZone = -1;
+                Invalidate();
+            }
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -3600,7 +3631,7 @@ namespace CreamyKeysDesktop
         {
             const float dt = 0.016f;
             const float stiffness = 520.0f;
-            const float damping = 38.0f;
+            const float damping = 46.0f;
             float displacement = _value - _visualValue;
             _animationVelocity += (stiffness * displacement - damping * _animationVelocity) * dt;
             _visualValue += _animationVelocity * dt;
@@ -4746,10 +4777,10 @@ namespace CreamyKeysDesktop
                 layoutLabel.Text = compact ? "Keys" : "Keyboard";
                 layoutLabel.Width = compact ? 80 : 96;
                 mouseLabel.Width = compact ? 80 : 96;
-                int comboWidth = compact ? 100 : 112;
+                int comboWidth = compact ? 90 : 112;
                 _keyboardLayoutCombo.SetBounds(comboX, 16, comboWidth, 30);
                 _mouseStyleCombo.SetBounds(comboX, 53, comboWidth, 30);
-                int toggleX = comboX + comboWidth + (compact ? 10 : 16);
+                int toggleX = comboX + comboWidth + (compact ? 8 : 16);
                 _editModeCheck.Text = "Edit";
                 _autoDetectCheck.Text = compact ? "Auto" : "Auto detect";
                 int toggleWidth = compact ? Math.Max(104, width - toggleX - 12) : 190;
@@ -5946,6 +5977,10 @@ namespace CreamyKeysDesktop
             }
 
             Rectangle bounds = e.Bounds;
+            if (bounds.Width <= 4 || bounds.Height <= 4)
+            {
+                return;
+            }
             bool selected = e.Index == tabs.SelectedIndex;
             Color fill = selected ? Color.White : Color.FromArgb(244, 247, 248);
             Color border = Color.FromArgb(213, 221, 224);

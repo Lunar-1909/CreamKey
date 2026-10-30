@@ -1,23 +1,20 @@
-# CreamyKeys v1.2.0
+# CreamyKeys v1.4.0
 
-Interface reliability, app discovery, and onboarding update.
+Welcome video, fluid controls, and final layout polish.
 
 ## Highlights
 
-- Fixed retained-frame painting that caused duplicated text, clipped controls, and page content to overlap after navigation.
-- Replaced the old cross-fade with a short directional slide that does not disturb the layout grid.
-- Added a smoothly moving sidebar selection marker and Lucide icons selected from Morphicons-supported sets.
-- Reworked toggles, sliders, buttons, and the live waveform with stable DPI-aware geometry.
-- Added installed-app discovery from Windows App Paths, uninstall records, Start menu shortcuts, and open windows.
-- Added app logos, search, process-name details, foreground-app capture, and manual fallback to Allowed apps.
-- Refined the Welcome pop-up with the real CreamyKeys logo and a Do not show again option.
-- Added a Behavior setting to re-enable the welcome pop-up and a complete in-app User guide.
-- Added an 18-second 1080p product trailer using current interface captures and native CreamyKeys key and mouse sounds.
-- Removed all author-identifying text from the interface, source-facing docs, and release metadata.
-- Preserved no-repeat keyboard/mouse sample variation, layered playback, import/export, and reduced motion.
+- Added the full 18-second 1080p CreamyKeys product tour directly to the Welcome pop-up. It loops while Welcome is open, starts muted, and has a dedicated sound toggle.
+- Added a branded poster fallback so Welcome never shows an empty video area while Media Foundation starts or when a codec is unavailable.
+- Rebuilt page, toggle, navigation-marker, and slider motion with interruptible, critically damped springs and immediate pointer-down feedback.
+- Fixed small-window clipping for the Dashboard `Edit` and `Auto` controls and removed stray hidden-tab text from the Behavior page.
+- Kept the virtual keyboard and mouse centered from measured bounds at compact and maximized sizes.
+- Preserved the installed-app scanner, application logos, search, foreground-app capture, import/export, user guide, layered sound variation, and reduced-motion mode.
+- Launching `CreamyKeys.exe` while CreamyKeys is already running now activates the existing window.
+- Retained one privacy-safe `NTGH` signature in the identity rail and removed personal author names from the interface and public documentation.
 
 ## Download
 
-Download `CreamyKeys-portable.zip`, extract it, and run `CreamyKeys.exe`. The Release also includes `CreamyKeys-trailer-v1.2.0.mp4` as a short visual overview.
+Download `CreamyKeys-portable-v1.4.0.zip`, extract it, and run `CreamyKeys.exe`. A standalone executable and the product trailer are also attached for convenience.
 
 Run as administrator when using CreamyKeys with elevated games.
