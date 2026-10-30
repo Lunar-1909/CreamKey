@@ -15,7 +15,7 @@ Extract the zip, then run `CreamyKeys.exe`.
 
 Watch the product trailer from the latest Release. The same video loops only inside the in-app **Trailer**, starts muted, and can be unmuted without leaving onboarding:
 
-- `CreamyKeys-trailer-v1.5.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
+- `CreamyKeys-trailer-v1.6.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
 
 ## Quick Start
 
@@ -35,6 +35,8 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - Global mouse click sound, including left, right, middle, X1, and X2 buttons.
 - No-repeat shuffle playback: samples cycle in a shuffled order and do not immediately repeat between cycles.
 - Independent keyboard and mouse shuffle pools, presets, volume, and layering.
+- Dashboard sound profiles with **CreamyKeys Original**, a synthesized **VIA Tone**, and reusable custom profiles.
+- Custom sound-profile files stored in `assets\profiles`, with quick select, update, and confirmed delete actions.
 - Separate mouse preset and mouse layers, matching the mod's secondary sound-pack behavior.
 - CreamyKeys sound presets extracted from the Minecraft mod assets.
 - Volume and pitch variation on every trigger for a less static sound.
@@ -42,6 +44,7 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - Native startup loading screen with a typed-code background, quiet key feedback, real initialization stages, and a segmented determinate progress bar.
 - Lightweight page switching with a critically damped navigation marker, immediate press feedback, selectable 30/60/120 FPS motion, and a reduced-motion option.
 - Single-instance activation: opening `CreamyKeys.exe` again restores the existing GUI instead of showing another process or warning.
+- Responsive full-size virtual keyboard with Esc, F1-F12, navigation cluster, numpad, media controls, and a safe Power key with a shutdown-style sound.
 - Virtual keyboard that lights up when you press physical keys.
 - Virtual mouse that lights up when you click physical mouse buttons.
 - Keyboard layouts: laptop, 60%, tenkeyless, and full size.
@@ -72,7 +75,14 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 
 ### Dashboard
 
-The Dashboard is the main view. It shows the virtual keyboard and, when enabled, the virtual mouse. You can select the keyboard layout and mouse style, enable keyboard sound, and show or hide the mouse overlay from the compact controls at the top.
+The Dashboard is the main view. It shows the virtual keyboard and, when enabled, the virtual mouse. The complete device group is measured, scaled, and centered again after every resize, so the keyboard, navigation cluster, numpad, and mouse do not overlap.
+
+Use **Sound profile** for fast switching:
+
+- **CreamyKeys Original** uses the selected mechanical-keyboard sample pack.
+- **VIA Tone** uses a lightweight synthesized pitch per key, inspired by the public VIA key tester without copying third-party audio assets.
+- **Save** creates a custom snapshot of the current keyboard/mouse packs, source, volumes, layers, and variation settings.
+- Select a custom profile, adjust settings, then press **Update** to edit it. **Delete** removes it after confirmation.
 
 Use the `+` tile below the keyboard to add another virtual key. CreamyKeys waits for a physical key press, names the new key, and adds it to the custom row. Right-click a custom key and choose **Delete key** to remove it; a confirmation dialog prevents accidental deletion.
 
@@ -175,6 +185,12 @@ Keyboard presets are stored in:
 assets\keyboards\<preset-name>\
 ```
 
+Reusable sound profiles are stored as JSON in:
+
+```text
+assets\profiles\
+```
+
 Mouse sounds are stored in:
 
 ```text
@@ -262,3 +278,5 @@ Idea: CreamyKeys mod - Minecraft
 Interface icons are from [Lucide](https://lucide.dev/) under the ISC license. Morphicons was used as the icon-set reference; its web animation runtime is not bundled into this native WinForms app.
 
 Motion behavior is adapted for native WinForms from the damped-spring interaction style demonstrated by [Animate UI](https://animate-ui.com/). UI terminology and control selection were cross-checked against [Name That UI](https://namethatui.com/).
+
+The synthesized **VIA Tone** mode is inspired by the interaction model of the [VIA Key Tester](https://www.usevia.app/test). No VIA audio files or source code are bundled.

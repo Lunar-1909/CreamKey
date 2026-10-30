@@ -291,6 +291,10 @@ namespace CreamyKeysDesktop
                 {
                     return 6;
                 }
+                if (!audio.PlayViaTone((int)Keys.A) || !audio.PlayPowerTone())
+                {
+                    return 9;
+                }
 
                 Thread.Sleep(250);
             }
@@ -303,6 +307,8 @@ namespace CreamyKeysDesktop
                 exported.MouseVolume = 73;
                 exported.ReducedMotion = true;
                 exported.AnimationFps = 120;
+                exported.SoundSource = "via";
+                exported.SoundProfileId = "builtin:via";
                 exported.ButtonOverrides["custom.smoke"] = new VirtualButtonConfig
                 {
                     Label = "F13",
@@ -314,6 +320,7 @@ namespace CreamyKeysDesktop
                 if (imported.ConfigVersion != AppConfig.CurrentVersion ||
                     imported.MouseVolume != 73 || !imported.ReducedMotion ||
                     imported.AnimationFps != 120 ||
+                    imported.SoundSource != "via" || imported.SoundProfileId != "builtin:via" ||
                     !imported.ButtonOverrides.ContainsKey("custom.smoke") ||
                     !imported.ButtonOverrides["custom.smoke"].IsCustom)
                 {
@@ -331,6 +338,43 @@ namespace CreamyKeysDesktop
                     if (File.Exists(roundTripPath))
                     {
                         File.Delete(roundTripPath);
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            string profileRoot = Path.Combine(Path.GetTempPath(), "creamykeys-smoke-profiles");
+            try
+            {
+                SoundProfileStore profileStore = new SoundProfileStore(profileRoot);
+                AppConfig profileConfig = AppConfig.Defaults(presets[0].Id);
+                profileConfig.SoundSource = "via";
+                SoundProfile profile = SoundProfile.FromConfig("Smoke profile", profileConfig);
+                profileStore.Save(profile);
+                List<SoundProfile> loadedProfiles = profileStore.LoadAll();
+                if (loadedProfiles.Count != 1 || loadedProfiles[0].SoundSource != "via")
+                {
+                    return 10;
+                }
+                profileStore.Delete(profile.Id);
+                if (profileStore.LoadAll().Count != 0)
+                {
+                    return 11;
+                }
+            }
+            catch
+            {
+                return 12;
+            }
+            finally
+            {
+                try
+                {
+                    if (Directory.Exists(profileRoot))
+                    {
+                        Directory.Delete(profileRoot, true);
                     }
                 }
                 catch
@@ -366,13 +410,15 @@ namespace CreamyKeysDesktop
 
     public sealed class AppConfig
     {
-        public const int CurrentVersion = 10;
+        public const int CurrentVersion = 11;
 
         public int ConfigVersion { get; set; }
         public bool Enabled { get; set; }
         public bool KeyboardSoundsEnabled { get; set; }
         public string Preset { get; set; }
         public string MousePreset { get; set; }
+        public string SoundSource { get; set; }
+        public string SoundProfileId { get; set; }
         public string KeyboardLayout { get; set; }
         public string MouseStyle { get; set; }
         public int Volume { get; set; }
@@ -420,6 +466,8 @@ namespace CreamyKeysDesktop
             config.KeyboardSoundsEnabled = true;
             config.Preset = fallbackPreset;
             config.MousePreset = "cherrymx_blue_abs_2";
+            config.SoundSource = "cream";
+            config.SoundProfileId = "builtin:cream";
             config.KeyboardLayout = "full";
             config.MouseStyle = "gaming";
             config.Volume = 70;
@@ -498,6 +546,11 @@ namespace CreamyKeysDesktop
             {
                 AnimationFps = 60;
             }
+            if (ConfigVersion < 11)
+            {
+                SoundSource = "cream";
+                SoundProfileId = "builtin:cream";
+            }
             ConfigVersion = CurrentVersion;
 
             if (string.IsNullOrWhiteSpace(Preset))
@@ -515,6 +568,15 @@ namespace CreamyKeysDesktop
             if (string.IsNullOrWhiteSpace(MouseStyle))
             {
                 MouseStyle = "gaming";
+            }
+            if (!string.Equals(SoundSource, "via", StringComparison.OrdinalIgnoreCase))
+            {
+                SoundSource = "cream";
+            }
+            if (string.IsNullOrWhiteSpace(SoundProfileId))
+            {
+                SoundProfileId = string.Equals(SoundSource, "via", StringComparison.OrdinalIgnoreCase)
+                    ? "builtin:via" : "builtin:cream";
             }
 
             Volume = Clamp(Volume, 0, 100);
@@ -571,6 +633,164 @@ namespace CreamyKeysDesktop
                 return max;
             }
             return value;
+        }
+    }
+
+    public sealed class SoundProfile
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string SoundSource { get; set; }
+        public string Preset { get; set; }
+        public string MousePreset { get; set; }
+        public int Volume { get; set; }
+        public int MouseVolume { get; set; }
+        public int KeyGainPercent { get; set; }
+        public int KeyboardLayers { get; set; }
+        public int MouseLayers { get; set; }
+        public int RandomVolumePercent { get; set; }
+        public int RandomPitchPercent { get; set; }
+
+        public override string ToString()
+        {
+            return Name;
+        }
+
+        public static SoundProfile FromConfig(string name, AppConfig config)
+        {
+            SoundProfile profile = new SoundProfile();
+            profile.Name = name;
+            profile.SoundSource = config.SoundSource;
+            profile.Preset = config.Preset;
+            profile.MousePreset = config.MousePreset;
+            profile.Volume = config.Volume;
+            profile.MouseVolume = config.MouseVolume;
+            profile.KeyGainPercent = config.KeyGainPercent;
+            profile.KeyboardLayers = config.KeyboardLayers;
+            profile.MouseLayers = config.MouseLayers;
+            profile.RandomVolumePercent = config.RandomVolumePercent;
+            profile.RandomPitchPercent = config.RandomPitchPercent;
+            return profile;
+        }
+
+        public void ApplyTo(AppConfig config)
+        {
+            config.SoundSource = string.Equals(SoundSource, "via", StringComparison.OrdinalIgnoreCase)
+                ? "via" : "cream";
+            config.Preset = Preset;
+            config.MousePreset = MousePreset;
+            config.Volume = Volume;
+            config.MouseVolume = MouseVolume;
+            config.KeyGainPercent = KeyGainPercent;
+            config.KeyboardLayers = KeyboardLayers;
+            config.MouseLayers = MouseLayers;
+            config.RandomVolumePercent = RandomVolumePercent;
+            config.RandomPitchPercent = RandomPitchPercent;
+            config.SoundProfileId = "custom:" + Id;
+        }
+    }
+
+    internal sealed class SoundProfileStore
+    {
+        private readonly string _directory;
+        private readonly JavaScriptSerializer _serializer = new JavaScriptSerializer();
+
+        public SoundProfileStore(string assetsRoot)
+        {
+            _directory = Path.Combine(assetsRoot, "profiles");
+            Directory.CreateDirectory(_directory);
+        }
+
+        public List<SoundProfile> LoadAll()
+        {
+            List<SoundProfile> profiles = new List<SoundProfile>();
+            if (!Directory.Exists(_directory))
+            {
+                return profiles;
+            }
+            string[] files = Directory.GetFiles(_directory, "*.json");
+            Array.Sort(files, StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < files.Length; i++)
+            {
+                try
+                {
+                    SoundProfile profile = _serializer.Deserialize<SoundProfile>(File.ReadAllText(files[i], Encoding.UTF8));
+                    if (profile != null && !string.IsNullOrWhiteSpace(profile.Name))
+                    {
+                        profile.Id = string.IsNullOrWhiteSpace(profile.Id)
+                            ? Path.GetFileNameWithoutExtension(files[i]) : profile.Id;
+                        profiles.Add(profile);
+                    }
+                }
+                catch
+                {
+                }
+            }
+            profiles.Sort(delegate(SoundProfile left, SoundProfile right)
+            {
+                return string.Compare(left.Name, right.Name, StringComparison.CurrentCultureIgnoreCase);
+            });
+            return profiles;
+        }
+
+        public SoundProfile Save(SoundProfile profile)
+        {
+            if (profile == null || string.IsNullOrWhiteSpace(profile.Name))
+            {
+                throw new ArgumentException("A profile name is required.", "profile");
+            }
+            Directory.CreateDirectory(_directory);
+            if (string.IsNullOrWhiteSpace(profile.Id))
+            {
+                string stem = SafeFileName(profile.Name);
+                string id = stem;
+                int suffix = 2;
+                while (File.Exists(Path.Combine(_directory, id + ".json")))
+                {
+                    id = stem + "-" + suffix.ToString(CultureInfo.InvariantCulture);
+                    suffix++;
+                }
+                profile.Id = id;
+            }
+            string path = Path.Combine(_directory, SafeFileName(profile.Id) + ".json");
+            File.WriteAllText(path, _serializer.Serialize(profile), Encoding.UTF8);
+            return profile;
+        }
+
+        public void Delete(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                return;
+            }
+            string path = Path.Combine(_directory, SafeFileName(id) + ".json");
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        private static string SafeFileName(string value)
+        {
+            string text = (value ?? "profile").Trim().ToLowerInvariant();
+            StringBuilder result = new StringBuilder();
+            bool dash = false;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
+                {
+                    result.Append(c);
+                    dash = false;
+                }
+                else if (!dash && result.Length > 0)
+                {
+                    result.Append('-');
+                    dash = true;
+                }
+            }
+            string safe = result.ToString().Trim('-');
+            return safe.Length == 0 ? "profile" : safe;
         }
     }
 
@@ -1323,6 +1543,7 @@ namespace CreamyKeysDesktop
         private readonly object _sampleLock;
         private readonly object _voiceLock;
         private readonly Dictionary<string, WavSample> _customSamples;
+        private readonly Dictionary<int, WavSample> _viaSamples;
         private readonly Random _random;
         private List<WavSample> _samples;
         private List<WavSample> _mouseSamples;
@@ -1346,12 +1567,14 @@ namespace CreamyKeysDesktop
         private int _randomPitchPercent;
         private int _maxVoices;
         private string _lastError;
+        private WavSample _powerSample;
 
         public AudioEngine()
         {
             _sampleLock = new object();
             _voiceLock = new object();
             _customSamples = new Dictionary<string, WavSample>(StringComparer.OrdinalIgnoreCase);
+            _viaSamples = new Dictionary<int, WavSample>();
             _random = new Random();
             _samples = new List<WavSample>();
             _mouseSamples = new List<WavSample>();
@@ -1441,6 +1664,113 @@ namespace CreamyKeysDesktop
         {
             return PlayRandomFrom(_samples, _keyboardShuffle, ref _keyboardShuffleCursor,
                 ref _lastKeyboardIndex, 1.0f);
+        }
+
+        public bool PlayViaTone(int virtualKeyCode)
+        {
+            if (!_enabled || !_audioReady)
+            {
+                return false;
+            }
+            WavSample sample;
+            lock (_sampleLock)
+            {
+                if (!_viaSamples.TryGetValue(virtualKeyCode, out sample))
+                {
+                    sample = CreateViaTone(virtualKeyCode);
+                    _viaSamples[virtualKeyCode] = sample;
+                }
+            }
+            return PlaySample(sample, false, 0.72f);
+        }
+
+        public bool PlayPowerTone()
+        {
+            if (!_enabled || !_audioReady)
+            {
+                return false;
+            }
+            lock (_sampleLock)
+            {
+                if (_powerSample == null)
+                {
+                    _powerSample = CreatePowerTone();
+                }
+            }
+            return PlaySample(_powerSample, false, 0.78f);
+        }
+
+        private static WavSample CreateViaTone(int virtualKeyCode)
+        {
+            int note = ViaNoteForKey(virtualKeyCode);
+            double frequency = 130.81278265 * Math.Pow(2.0, note / 12.0);
+            int frames = (int)(OutputSampleRate * 0.105);
+            short[] data = new short[frames];
+            for (int i = 0; i < frames; i++)
+            {
+                double t = i / (double)OutputSampleRate;
+                double attack = Math.Min(1.0, t / 0.004);
+                double envelope = attack * Math.Exp(-t * 27.0);
+                double phase = Math.PI * 2.0 * frequency * t;
+                double wave = Math.Sin(phase) + 0.23 * Math.Sin(phase * 2.0) +
+                    0.08 * Math.Sin(phase * 3.0);
+                data[i] = (short)Math.Max(short.MinValue,
+                    Math.Min(short.MaxValue, wave * envelope * 12200.0));
+            }
+            WavSample sample = new WavSample();
+            sample.Name = "via-tone-" + virtualKeyCode.ToString(CultureInfo.InvariantCulture);
+            sample.Data = data;
+            sample.SampleRate = OutputSampleRate;
+            return sample;
+        }
+
+        private static int ViaNoteForKey(int virtualKeyCode)
+        {
+            string lower = "ZXCVBNM";
+            string home = "ASDFGHJKL";
+            string upper = "QWERTYUIOP";
+            string digits = "1234567890";
+            char key = virtualKeyCode >= 0 && virtualKeyCode <= char.MaxValue
+                ? char.ToUpperInvariant((char)virtualKeyCode) : '\0';
+            int index = lower.IndexOf(key);
+            if (index >= 0) return index;
+            index = home.IndexOf(key);
+            if (index >= 0) return 5 + index;
+            index = upper.IndexOf(key);
+            if (index >= 0) return 10 + index;
+            index = digits.IndexOf(key);
+            if (index >= 0) return 15 + index;
+            if (virtualKeyCode >= 0x70 && virtualKeyCode <= 0x7B)
+            {
+                return 20 + (virtualKeyCode - 0x70);
+            }
+            return 4 + Math.Abs(virtualKeyCode % 16);
+        }
+
+        private static WavSample CreatePowerTone()
+        {
+            int frames = (int)(OutputSampleRate * 0.68);
+            short[] data = new short[frames];
+            double phaseA = 0.0;
+            double phaseB = 0.0;
+            for (int i = 0; i < frames; i++)
+            {
+                double t = i / (double)OutputSampleRate;
+                double progress = t / 0.68;
+                double frequencyA = 520.0 - 360.0 * progress;
+                double frequencyB = 330.0 - 210.0 * progress;
+                phaseA += Math.PI * 2.0 * frequencyA / OutputSampleRate;
+                phaseB += Math.PI * 2.0 * frequencyB / OutputSampleRate;
+                double envelope = Math.Sin(Math.Min(1.0, progress * 5.0) * Math.PI / 2.0) *
+                    Math.Pow(Math.Max(0.0, 1.0 - progress), 1.45);
+                double wave = Math.Sin(phaseA) * 0.68 + Math.Sin(phaseB) * 0.32;
+                data[i] = (short)(wave * envelope * 13500.0);
+            }
+            WavSample sample = new WavSample();
+            sample.Name = "power-down";
+            sample.Data = data;
+            sample.SampleRate = OutputSampleRate;
+            return sample;
         }
 
         public void LoadMousePreset(string directoryPath)
@@ -2491,11 +2821,13 @@ namespace CreamyKeysDesktop
             StringFormat format = new StringFormat();
             format.Alignment = StringAlignment.Center;
             format.LineAlignment = StringAlignment.Center;
-            format.Trimming = StringTrimming.EllipsisCharacter;
+            format.Trimming = label.Length <= 6 && r.Width >= 28
+                ? StringTrimming.None : StringTrimming.EllipsisCharacter;
             format.FormatFlags = StringFormatFlags.NoWrap;
             using (SolidBrush textBrush = new SolidBrush(text))
             {
-                float labelFactor = label.Length >= 5 ? 0.20f : (label.Length >= 4 ? 0.24f : 0.34f);
+                float labelFactor = label.Length >= 5 ? 0.18f :
+                    (label.Length == 4 ? 0.19f : (label.Length == 3 ? 0.25f : 0.34f));
                 float fontSize = Math.Min(8.5f, Math.Max(5.6f, Math.Min(r.Height * 0.42f, r.Width * labelFactor)));
                 Font drawFont = Math.Abs(fontSize - Font.Size) > 0.2f ? new Font("Segoe UI", fontSize) : Font;
                 g.DrawString(label, drawFont, textBrush, r, format);
@@ -2602,12 +2934,12 @@ namespace CreamyKeysDesktop
             _buttons.Clear();
             _addButtonBounds = Rectangle.Empty;
 
-            int bottomReserve = Math.Max(84, Height / 4);
+            int bottomReserve = 58;
             Rectangle content = new Rectangle(
                 16,
-                62,
+                52,
                 Math.Max(120, Width - 32),
-                Math.Max(120, Height - 62 - bottomReserve));
+                Math.Max(120, Height - 52 - bottomReserve));
             if (_showMouse)
             {
                 LayoutKeyboardAndMouse(content);
@@ -2638,12 +2970,12 @@ namespace CreamyKeysDesktop
             });
 
             int tileWidth = Math.Max(58, Math.Min(82, Width / 10));
-            int tileHeight = 38;
+            int tileHeight = 34;
             int gap = 8;
             int visible = Math.Min(custom.Count, Math.Max(1, (Width - 64) / (tileWidth + gap) - 1));
             int groupWidth = ((visible + 1) * tileWidth) + (visible * gap);
             int x = Math.Max(16, (Width - groupWidth) / 2);
-            int y = Math.Max(66, Height - 58);
+            int y = Math.Max(66, Height - 48);
             for (int i = 0; i < visible; i++)
             {
                 VirtualButtonDefinition def = new VirtualButtonDefinition();
@@ -2818,49 +3150,37 @@ namespace CreamyKeysDesktop
         {
             List<VirtualButtonDefinition> units = KeyboardUnits(_keyboardLayout);
             KeyboardMeasure measure = MeasureKeyboard(units);
-            int gap = content.Width >= 1300 ? 78 : 48;
-            int mouseWidth = Math.Min(250, Math.Max(170, content.Width / 7));
-            int sideKeyboardWidth = Math.Max(260, content.Width - mouseWidth - gap);
-            Rectangle sideKeyboardProbe = new Rectangle(content.X, content.Y, sideKeyboardWidth, content.Height);
-            float sideScale = ResolveKeyboardScale(sideKeyboardProbe, measure, 44.0f);
-            Size sideKeyboardSize = KeyboardSize(measure, sideScale);
-            int sideMouseHeight = Math.Min(content.Height, Math.Min(280, Math.Max(150, sideKeyboardSize.Height + 32)));
-            int sideGroupWidth = sideKeyboardSize.Width + gap + mouseWidth;
-            int groupX = content.X + Math.Max(0, (content.Width - sideGroupWidth) / 2);
-            bool sideBySide = content.Width >= 980 && content.Height >= 210 &&
-                sideKeyboardSize.Width >= 420 && sideKeyboardSize.Height >= 120 &&
-                sideGroupWidth <= content.Width;
+            const float mouseUnits = 3.75f;
+            const float gapUnits = 0.75f;
+            float combinedUnitsWidth = measure.MaxX + gapUnits + mouseUnits;
+            float combinedUnitsHeight = Math.Max(measure.MaxY, 5.8f);
+            float scale = Math.Min(
+                Math.Max(40.0f, content.Width - 8.0f) / combinedUnitsWidth,
+                Math.Max(40.0f, content.Height - 8.0f) / combinedUnitsHeight);
+            scale = Math.Max(7.0f, Math.Min(44.0f, scale));
 
-            if (sideBySide)
-            {
-                int groupHeight = Math.Max(sideKeyboardSize.Height, sideMouseHeight);
-                int groupY = AlignedGroupY(content, groupHeight);
-                Rectangle keyboardArea = new Rectangle(
-                    groupX,
-                    groupY + Math.Max(0, (groupHeight - sideKeyboardSize.Height) / 2),
-                    sideKeyboardSize.Width,
-                    sideKeyboardSize.Height);
-                Rectangle mouseArea = new Rectangle(
-                    keyboardArea.Right + gap,
-                    groupY + Math.Max(0, (groupHeight - sideMouseHeight) / 2),
-                    mouseWidth,
-                    sideMouseHeight);
-                BuildKeyboardButtons(units, measure, keyboardArea, sideScale, true);
-                BuildMouseButtons(mouseArea);
-                CenterAllButtonsInArea(content);
-            }
-            else
-            {
-                float compactScale = ResolveKeyboardScale(content, measure, 44.0f);
-                Size compactKeyboardSize = KeyboardSize(measure, compactScale);
-                Rectangle keyboardArea = new Rectangle(
-                    content.X + Math.Max(0, (content.Width - compactKeyboardSize.Width) / 2),
-                    content.Y + Math.Max(0, (content.Height - compactKeyboardSize.Height) / 2),
-                    compactKeyboardSize.Width,
-                    compactKeyboardSize.Height);
-                BuildKeyboardButtons(units, measure, keyboardArea, compactScale, true);
-                CenterKeyboardButtonsInArea(content, false);
-            }
+            Size keyboardSize = KeyboardSize(measure, scale);
+            int gap = Math.Max(8, (int)Math.Round(gapUnits * scale));
+            int mouseWidth = Math.Max(64, (int)Math.Round(mouseUnits * scale));
+            int mouseHeight = Math.Max(82, (int)Math.Round(Math.Min(5.8f, measure.MaxY) * scale));
+            int groupWidth = keyboardSize.Width + gap + mouseWidth;
+            int groupHeight = Math.Max(keyboardSize.Height, mouseHeight);
+            int groupX = content.X + (content.Width - groupWidth) / 2;
+            int groupY = content.Y + (content.Height - groupHeight) / 2;
+
+            Rectangle keyboardArea = new Rectangle(
+                groupX,
+                groupY + Math.Max(0, (groupHeight - keyboardSize.Height) / 2),
+                keyboardSize.Width,
+                keyboardSize.Height);
+            Rectangle mouseArea = new Rectangle(
+                keyboardArea.Right + gap,
+                groupY + Math.Max(0, (groupHeight - mouseHeight) / 2),
+                mouseWidth,
+                mouseHeight);
+            BuildKeyboardButtons(units, measure, keyboardArea, scale, true);
+            BuildMouseButtons(mouseArea);
+            CenterAllButtonsInArea(content);
         }
 
         private int AlignedGroupY(Rectangle content, int groupHeight)
@@ -2943,25 +3263,25 @@ namespace CreamyKeysDesktop
 
         private void BuildMouseButtons(Rectangle area)
         {
-            int w = Math.Max(150, Math.Min(area.Width - 12, 250));
-            int h = Math.Max(150, Math.Min(area.Height - 12, 280));
+            int w = Math.Max(64, Math.Min(area.Width, 250));
+            int h = Math.Max(82, Math.Min(area.Height, 280));
             int x = area.X + Math.Max(0, (area.Width - w) / 2);
             int y = area.Y + Math.Max(0, (area.Height - h) / 2);
-            int topButtonHeight = Math.Max(34, Math.Min(52, h / 5));
-            int sideButtonWidth = Math.Max(16, Math.Min(22, w / 11));
-            int bodyWidth = Math.Max(92, w - sideButtonWidth * 2 - 36);
-            int bodyTop = y + topButtonHeight + 16;
-            int bodyHeight = Math.Max(86, h - topButtonHeight - 20);
+            int topButtonHeight = Math.Max(20, Math.Min(52, h / 5));
+            int sideButtonWidth = Math.Max(10, Math.Min(22, w / 10));
+            int bodyWidth = Math.Max(44, w - sideButtonWidth * 2 - Math.Max(12, w / 7));
+            int bodyTop = y + topButtonHeight + Math.Max(6, h / 18);
+            int bodyHeight = Math.Max(48, h - topButtonHeight - Math.Max(8, h / 12));
             Rectangle body = new Rectangle(x + (w - bodyWidth) / 2, bodyTop, bodyWidth, bodyHeight);
             int bodyMid = body.X + body.Width / 2;
-            int halfButtonWidth = Math.Max(38, (body.Width - 10) / 2);
-            int sideButtonHeight = Math.Max(28, Math.Min(42, body.Height / 4));
+            int halfButtonWidth = Math.Max(20, (body.Width - 6) / 2);
+            int sideButtonHeight = Math.Max(16, Math.Min(42, body.Height / 4));
             int sideButtonGap = Math.Max(5, body.Height / 22);
             int sideBlockHeight = sideButtonHeight * 2 + sideButtonGap;
             int sideButtonY = body.Y + Math.Max(0, (body.Height - sideBlockHeight) / 2);
             int sideButtonX = body.X - sideButtonWidth + 3;
-            int wheelWidth = Math.Max(18, Math.Min(26, body.Width / 5));
-            int wheelHeight = Math.Max(38, Math.Min(60, body.Height / 3));
+            int wheelWidth = Math.Max(10, Math.Min(26, body.Width / 5));
+            int wheelHeight = Math.Max(22, Math.Min(60, body.Height / 3));
 
             AddMouse("mouse.body", DisplayName(_mouseStyle), body);
             AddMouse("mouse.left", "Left", new Rectangle(body.X, y, halfButtonWidth, topButtonHeight));
@@ -3004,55 +3324,87 @@ namespace CreamyKeysDesktop
             bool full = !compact && !tkl && !laptop;
             List<VirtualButtonDefinition> list = new List<VirtualButtonDefinition>();
 
-            AddRow(list, 0, 0, new object[] { "Esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", new KeySpec("Back", 2.0f) });
-            AddRow(list, 0, 1.15f, new object[] { new KeySpec("Tab", 1.5f), "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", new KeySpec("\\", 1.5f) });
-            AddRow(list, 0, 2.3f, new object[] { new KeySpec("Caps", 1.75f), "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", new KeySpec("Enter", 2.25f) });
+            float mainTop = compact ? 0.0f : 1.35f;
+            if (!compact)
+            {
+                AddKey(list, "Esc", 0.0f, 0.0f, 1.0f);
+                AddKey(list, "F1", 2.0f, 0.0f, 1.0f);
+                AddKey(list, "F2", 3.15f, 0.0f, 1.0f);
+                AddKey(list, "F3", 4.3f, 0.0f, 1.0f);
+                AddKey(list, "F4", 5.45f, 0.0f, 1.0f);
+                AddKey(list, "F5", 6.9f, 0.0f, 1.0f);
+                AddKey(list, "F6", 8.05f, 0.0f, 1.0f);
+                AddKey(list, "F7", 9.2f, 0.0f, 1.0f);
+                AddKey(list, "F8", 10.35f, 0.0f, 1.0f);
+                AddKey(list, "F9", 11.8f, 0.0f, 1.0f);
+                AddKey(list, "F10", 12.95f, 0.0f, 1.0f);
+                AddKey(list, "F11", 14.1f, 0.0f, 1.0f);
+                AddKey(list, "F12", 15.25f, 0.0f, 1.0f);
+                if (!laptop)
+                {
+                    AddKey(list, "Prt", 16.65f, 0.0f, 1.0f);
+                    AddKey(list, "ScrLk", 17.8f, 0.0f, 1.0f);
+                    AddKey(list, "Pause", 18.95f, 0.0f, 1.0f);
+                }
+                AddKey(list, "Pwr", laptop ? 16.65f : 20.4f, 0.0f, 1.35f, "key.Power", 0x5F);
+                if (full)
+                {
+                    AddKey(list, "Mute", 21.9f, 0.0f, 1.0f, "key.Mute", 0xAD);
+                    AddKey(list, "Vol-", 23.05f, 0.0f, 1.0f, "key.VolumeDown", 0xAE);
+                    AddKey(list, "Vol+", 24.2f, 0.0f, 1.0f, "key.VolumeUp", 0xAF);
+                }
+            }
+
+            object[] numberRow = compact
+                ? new object[] { "Esc", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", new KeySpec("Back", 2.0f) }
+                : new object[] { "`", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "=", new KeySpec("Back", 2.0f) };
+            AddRow(list, 0, mainTop, numberRow);
+            AddRow(list, 0, mainTop + 1.15f, new object[] { new KeySpec("Tab", 1.5f), "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "[", "]", new KeySpec("\\", 1.5f) });
+            AddRow(list, 0, mainTop + 2.3f, new object[] { new KeySpec("Caps", 1.75f), "A", "S", "D", "F", "G", "H", "J", "K", "L", ";", "'", new KeySpec("Enter", 2.25f) });
             if (laptop)
             {
-                AddRow(list, 0, 3.45f, new object[] { new KeySpec("Shift", 2.25f), "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", new KeySpec("Shift", 1.25f), new KeySpec("Up", 1.0f, "key.Up", 0x26) });
-                AddRow(list, 0, 4.6f, new object[] { new KeySpec("Ctrl", 1.35f), new KeySpec("Win", 1.2f), new KeySpec("Alt", 1.2f), new KeySpec("Space", 5.8f), new KeySpec("Alt", 1.2f), new KeySpec("Fn", 1.2f), new KeySpec("<", 1.0f, "key.Left", 0x25), new KeySpec("Dn", 1.0f, "key.Down", 0x28), new KeySpec(">", 1.0f, "key.Right", 0x27) });
+                AddRow(list, 0, mainTop + 3.45f, new object[] { new KeySpec("Shift", 2.25f), "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", new KeySpec("Shift", 1.25f), new KeySpec("Up", 1.0f, "key.Up", 0x26) });
+                AddRow(list, 0, mainTop + 4.6f, new object[] { new KeySpec("Ctrl", 1.35f), new KeySpec("Win", 1.2f), new KeySpec("Alt", 1.2f), new KeySpec("Space", 5.8f), new KeySpec("Alt", 1.2f), new KeySpec("Fn", 1.2f), new KeySpec("<", 1.0f, "key.Left", 0x25), new KeySpec("Dn", 1.0f, "key.Down", 0x28), new KeySpec(">", 1.0f, "key.Right", 0x27) });
             }
             else
             {
-                AddRow(list, 0, 3.45f, new object[] { new KeySpec("Shift", 2.25f), "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", new KeySpec("Shift", 2.75f) });
-                AddRow(list, 0, 4.6f, new object[] { new KeySpec("Ctrl", 1.35f), new KeySpec("Win", 1.2f), new KeySpec("Alt", 1.2f), new KeySpec("Space", 5.8f), new KeySpec("Alt", 1.2f), new KeySpec("Fn", 1.2f), new KeySpec("Menu", 1.1f), new KeySpec("Ctrl", 1.0f) });
+                AddRow(list, 0, mainTop + 3.45f, new object[] { new KeySpec("Shift", 2.25f), "Z", "X", "C", "V", "B", "N", "M", ",", ".", "/", new KeySpec("Shift", 2.75f) });
+                AddRow(list, 0, mainTop + 4.6f, new object[] { new KeySpec("Ctrl", 1.35f), new KeySpec("Win", 1.2f), new KeySpec("Alt", 1.2f), new KeySpec("Space", 5.8f), new KeySpec("Alt", 1.2f), new KeySpec("Fn", 1.2f), new KeySpec("Menu", 1.1f), new KeySpec("Ctrl", 1.0f) });
             }
 
             if (!compact && !laptop)
             {
-                AddKey(list, "Prt", 15.5f, 0, 1.0f);
-                AddKey(list, "Home", 16.65f, 0, 1.1f);
-                AddKey(list, "End", 17.8f, 0, 1.0f);
-                AddKey(list, "Ins", 15.5f, 1.15f, 1.0f);
-                AddKey(list, "Del", 16.65f, 1.15f, 1.0f);
-                AddKey(list, "PgUp", 17.8f, 1.15f, 1.1f);
-                AddKey(list, "PgDn", 17.8f, 2.3f, 1.1f);
-                AddKey(list, "Up", 16.65f, 3.45f, 1.0f);
-                AddKey(list, "<", 15.5f, 4.6f, 1.0f, "key.Left", 0x25);
-                AddKey(list, "Dn", 16.65f, 4.6f, 1.0f, "key.Down", 0x28);
-                AddKey(list, ">", 17.8f, 4.6f, 1.0f, "key.Right", 0x27);
+                AddKey(list, "Ins", 16.65f, mainTop, 1.0f);
+                AddKey(list, "Home", 17.8f, mainTop, 1.0f);
+                AddKey(list, "PgUp", 18.95f, mainTop, 1.0f);
+                AddKey(list, "Del", 16.65f, mainTop + 1.15f, 1.0f);
+                AddKey(list, "End", 17.8f, mainTop + 1.15f, 1.0f);
+                AddKey(list, "PgDn", 18.95f, mainTop + 1.15f, 1.0f);
+                AddKey(list, "Up", 17.8f, mainTop + 3.45f, 1.0f);
+                AddKey(list, "<", 16.65f, mainTop + 4.6f, 1.0f, "key.Left", 0x25);
+                AddKey(list, "Dn", 17.8f, mainTop + 4.6f, 1.0f, "key.Down", 0x28);
+                AddKey(list, ">", 18.95f, mainTop + 4.6f, 1.0f, "key.Right", 0x27);
             }
 
             if (full)
             {
-                AddKey(list, "Num", 19.2f, 1.15f, 1.0f);
-                AddKey(list, "/", 20.35f, 1.15f, 1.0f);
-                AddKey(list, "*", 21.5f, 1.15f, 1.0f);
-                AddKey(list, "-", 22.65f, 1.15f, 1.0f);
-                AddKey(list, "7", 19.2f, 2.3f, 1.0f, "key.Num7", 0x67);
-                AddKey(list, "8", 20.35f, 2.3f, 1.0f, "key.Num8", 0x68);
-                AddKey(list, "9", 21.5f, 2.3f, 1.0f, "key.Num9", 0x69);
-                AddKey(list, "+", 22.65f, 2.3f, 1.0f);
-                AddKey(list, "4", 19.2f, 3.45f, 1.0f, "key.Num4", 0x64);
-                AddKey(list, "5", 20.35f, 3.45f, 1.0f, "key.Num5", 0x65);
-                AddKey(list, "6", 21.5f, 3.45f, 1.0f, "key.Num6", 0x66);
-                AddKey(list, "1", 19.2f, 4.6f, 1.0f, "key.Num1", 0x61);
-                AddKey(list, "2", 20.35f, 4.6f, 1.0f, "key.Num2", 0x62);
-                AddKey(list, "3", 21.5f, 4.6f, 1.0f, "key.Num3", 0x63);
-                AddKey(list, "Enter", 22.65f, 3.45f, 1.0f);
-                AddKey(list, "0", 19.2f, 5.75f, 2.15f, "key.Num0", 0x60);
-                AddKey(list, ".", 21.5f, 5.75f, 1.0f, "key.NumDot", 0x6E);
-                AddKey(list, "Enter", 22.65f, 4.6f, 1.0f);
+                AddKey(list, "Num", 20.4f, mainTop, 1.0f, "key.NumLock", 0x90);
+                AddKey(list, "/", 21.55f, mainTop, 1.0f, "key.NumDivide", 0x6F);
+                AddKey(list, "*", 22.7f, mainTop, 1.0f, "key.NumMultiply", 0x6A);
+                AddKey(list, "-", 23.85f, mainTop, 1.0f, "key.NumSubtract", 0x6D);
+                AddKey(list, "7", 20.4f, mainTop + 1.15f, 1.0f, "key.Num7", 0x67);
+                AddKey(list, "8", 21.55f, mainTop + 1.15f, 1.0f, "key.Num8", 0x68);
+                AddKey(list, "9", 22.7f, mainTop + 1.15f, 1.0f, "key.Num9", 0x69);
+                AddKey(list, "+", 23.85f, mainTop + 1.15f, 1.0f, 2.15f, "key.NumAdd", 0x6B);
+                AddKey(list, "4", 20.4f, mainTop + 2.3f, 1.0f, "key.Num4", 0x64);
+                AddKey(list, "5", 21.55f, mainTop + 2.3f, 1.0f, "key.Num5", 0x65);
+                AddKey(list, "6", 22.7f, mainTop + 2.3f, 1.0f, "key.Num6", 0x66);
+                AddKey(list, "1", 20.4f, mainTop + 3.45f, 1.0f, "key.Num1", 0x61);
+                AddKey(list, "2", 21.55f, mainTop + 3.45f, 1.0f, "key.Num2", 0x62);
+                AddKey(list, "3", 22.7f, mainTop + 3.45f, 1.0f, "key.Num3", 0x63);
+                AddKey(list, "Enter", 23.85f, mainTop + 3.45f, 1.0f, 2.15f, "key.NumEnter", 0x0D);
+                AddKey(list, "0", 20.4f, mainTop + 4.6f, 2.15f, "key.Num0", 0x60);
+                AddKey(list, ".", 22.7f, mainTop + 4.6f, 1.0f, "key.NumDot", 0x6E);
             }
 
             return list;
@@ -3095,12 +3447,18 @@ namespace CreamyKeysDesktop
 
         private void AddKey(List<VirtualButtonDefinition> list, string label, float x, float y, float width, string id, int vkCode)
         {
+            AddKey(list, label, x, y, width, 1.0f, id, vkCode);
+        }
+
+        private void AddKey(List<VirtualButtonDefinition> list, string label, float x, float y,
+            float width, float height, string id, int vkCode)
+        {
             VirtualButtonDefinition def = new VirtualButtonDefinition();
             def.Label = label;
             def.Kind = "key";
             def.VkCode = vkCode == 0 ? VkForLabel(label) : vkCode;
             def.Id = id ?? ("key." + label.Replace("\\", "Backslash").Replace("/", "Slash").Replace(" ", ""));
-            def.UnitBounds = new RectangleF(x, y, width, 1.0f);
+            def.UnitBounds = new RectangleF(x, y, width, height);
             list.Add(def);
         }
 
@@ -3122,6 +3480,26 @@ namespace CreamyKeysDesktop
             switch (label)
             {
                 case "Esc": return 0x1B;
+                case "`": return 0xC0;
+                case "F1": return 0x70;
+                case "F2": return 0x71;
+                case "F3": return 0x72;
+                case "F4": return 0x73;
+                case "F5": return 0x74;
+                case "F6": return 0x75;
+                case "F7": return 0x76;
+                case "F8": return 0x77;
+                case "F9": return 0x78;
+                case "F10": return 0x79;
+                case "F11": return 0x7A;
+                case "F12": return 0x7B;
+                case "Prt": return 0x2C;
+                case "ScrLk": return 0x91;
+                case "Pause": return 0x13;
+                case "Pwr": return 0x5F;
+                case "Mute": return 0xAD;
+                case "Vol-": return 0xAE;
+                case "Vol+": return 0xAF;
                 case "Back": return 0x08;
                 case "Tab": return 0x09;
                 case "Caps": return 0x14;
@@ -3549,6 +3927,67 @@ namespace CreamyKeysDesktop
             config.IsCustom = _isCustom;
             config.VirtualKeyCode = _virtualKeyCode;
             ResultConfig = config;
+        }
+    }
+
+    internal sealed class ProfileNameDialog : Form
+    {
+        private readonly TextBox _nameBox;
+
+        public string ProfileName
+        {
+            get { return _nameBox.Text.Trim(); }
+        }
+
+        public ProfileNameDialog()
+        {
+            Text = "Save sound profile";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MinimizeBox = false;
+            MaximizeBox = false;
+            ShowInTaskbar = false;
+            ClientSize = new Size(430, 182);
+            Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
+            BackColor = UiTheme.Content;
+            ForeColor = UiTheme.Ink;
+
+            Label title = new Label();
+            title.Text = "Profile name";
+            title.Font = UiTheme.DisplayFont(11.0f, FontStyle.Bold);
+            title.SetBounds(24, 22, 250, 28);
+            Controls.Add(title);
+
+            _nameBox = new TextBox();
+            _nameBox.SetBounds(24, 62, 382, 30);
+            Controls.Add(_nameBox);
+
+            Button save = new Button();
+            save.Text = "Save profile";
+            save.DialogResult = DialogResult.OK;
+            save.FlatStyle = FlatStyle.Flat;
+            save.BackColor = UiTheme.Action;
+            save.ForeColor = UiTheme.Ink;
+            save.SetBounds(220, 122, 108, 36);
+            save.Click += delegate
+            {
+                if (string.IsNullOrWhiteSpace(ProfileName))
+                {
+                    DialogResult = DialogResult.None;
+                    _nameBox.Focus();
+                }
+            };
+            Controls.Add(save);
+
+            Button cancel = new Button();
+            cancel.Text = "Cancel";
+            cancel.DialogResult = DialogResult.Cancel;
+            cancel.FlatStyle = FlatStyle.Flat;
+            cancel.SetBounds(338, 122, 68, 36);
+            Controls.Add(cancel);
+
+            AcceptButton = save;
+            CancelButton = cancel;
         }
     }
 
@@ -4464,6 +4903,8 @@ namespace CreamyKeysDesktop
         private readonly Stopwatch _stopwatch;
         private readonly NotifyIcon _trayIcon;
         private readonly List<PresetInfo> _presets;
+        private readonly SoundProfileStore _soundProfileStore;
+        private readonly List<SoundProfile> _soundProfiles;
         private AppConfig _config;
         private bool _allowClose;
         private bool _loadingControls;
@@ -4481,6 +4922,9 @@ namespace CreamyKeysDesktop
         private CheckBox _editModeCheck;
         private ComboBox _presetCombo;
         private ComboBox _mousePresetCombo;
+        private ComboBox _soundProfileCombo;
+        private Button _saveProfileButton;
+        private Button _deleteProfileButton;
         private CheckBox _enabledCheck;
         private CheckBox _keyboardSoundsCheck;
         private CheckBox _playRepeatCheck;
@@ -4553,6 +4997,8 @@ namespace CreamyKeysDesktop
             _suppressWelcome = suppressWelcome;
             _assetsRoot = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "assets");
             _configStore = new ConfigStore();
+            _soundProfileStore = new SoundProfileStore(_assetsRoot);
+            _soundProfiles = _soundProfileStore.LoadAll();
             _presets = SoundLibrary.Scan(_assetsRoot);
             string fallbackPreset = _presets.Count > 0 ? _presets[0].Id : "";
             _config = _configStore.Load(fallbackPreset);
@@ -4801,8 +5247,6 @@ namespace CreamyKeysDesktop
             welcomeButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             welcomeButton.Click += delegate { ShowWelcomeTour(); };
             ApplySidebarIcon(welcomeButton, "sparkles");
-            welcomeButton.Font = UiTheme.BodyFont(8.2f, FontStyle.Bold);
-            welcomeButton.Padding = new Padding(6, 0, 4, 0);
             sidebar.Controls.Add(welcomeButton);
 
             Button guideButton = CreateSidebarButton("User guide", false);
@@ -4978,7 +5422,7 @@ namespace CreamyKeysDesktop
             layout.ColumnCount = 1;
             layout.RowCount = 2;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 164.0f));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 188.0f));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
             devicePage.Controls.Add(layout);
 
@@ -5043,6 +5487,20 @@ namespace CreamyKeysDesktop
             _detectButton.Click += delegate { DetectDevicesNow(); };
             deviceCard.Controls.Add(_detectButton);
 
+            Label profileLabel = CreateDarkLabel("Sound profile", 22, 128, 98, 28);
+            deviceCard.Controls.Add(profileLabel);
+            _soundProfileCombo = CreateDeviceCombo();
+            _soundProfileCombo.SelectedIndexChanged += delegate { OnSoundProfileSelected(); };
+            deviceCard.Controls.Add(_soundProfileCombo);
+
+            _saveProfileButton = CreateButton("Save profile", true);
+            _saveProfileButton.Click += delegate { SaveCurrentSoundProfile(); };
+            deviceCard.Controls.Add(_saveProfileButton);
+
+            _deleteProfileButton = CreateButton("Delete", false);
+            _deleteProfileButton.Click += delegate { DeleteCurrentSoundProfile(); };
+            deviceCard.Controls.Add(_deleteProfileButton);
+
             EventHandler arrangeCard = delegate
             {
                 int width = deviceCard.ClientSize.Width;
@@ -5069,6 +5527,18 @@ namespace CreamyKeysDesktop
                 _autoDetectCheck.SetBounds(controlsX + (compact ? 102 : 116), 92,
                     compact ? 100 : 142, 32);
                 _detectButton.SetBounds(Math.Max(12, width - 102), 91, 82, 34);
+                int profileComboX = 124;
+                int deleteWidth = 82;
+                int saveWidth = compact ? 104 : 116;
+                int deleteX = width - deleteWidth - 18;
+                int saveX = deleteX - saveWidth - 8;
+                int profileComboWidth = Math.Max(130, saveX - profileComboX - 10);
+                _soundProfileCombo.SetBounds(profileComboX, 126, profileComboWidth, 32);
+                _saveProfileButton.SetBounds(saveX, 125, saveWidth, 34);
+                _deleteProfileButton.SetBounds(deleteX, 125, deleteWidth, 34);
+                SoundProfileChoice profileChoice = _soundProfileCombo.SelectedItem as SoundProfileChoice;
+                _saveProfileButton.Text = profileChoice != null && profileChoice.Profile != null
+                    ? "Update" : "Save";
                 int waveWidth = Math.Max(130, Math.Min(286, controlsX - 42));
                 _pulseControl.Width = waveWidth;
                 deviceTitle.Width = Math.Max(150, controlsX - 44);
@@ -6691,11 +7161,175 @@ namespace CreamyKeysDesktop
             }
         }
 
+        private void LoadSoundProfileCombo()
+        {
+            if (_soundProfileCombo == null)
+            {
+                return;
+            }
+            _soundProfileCombo.Items.Clear();
+            _soundProfileCombo.Items.Add(new SoundProfileChoice(
+                "builtin:cream", "CreamyKeys Original", null));
+            _soundProfileCombo.Items.Add(new SoundProfileChoice(
+                "builtin:via", "VIA Tone", null));
+            for (int i = 0; i < _soundProfiles.Count; i++)
+            {
+                SoundProfile profile = _soundProfiles[i];
+                _soundProfileCombo.Items.Add(new SoundProfileChoice(
+                    "custom:" + profile.Id, profile.Name, profile));
+            }
+
+            for (int i = 0; i < _soundProfileCombo.Items.Count; i++)
+            {
+                SoundProfileChoice choice = _soundProfileCombo.Items[i] as SoundProfileChoice;
+                if (choice != null && string.Equals(choice.Id, _config.SoundProfileId,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    _soundProfileCombo.SelectedIndex = i;
+                    break;
+                }
+            }
+            if (_soundProfileCombo.SelectedIndex < 0)
+            {
+                _soundProfileCombo.SelectedIndex = string.Equals(_config.SoundSource, "via",
+                    StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+            }
+            UpdateSoundProfileButtons();
+        }
+
+        private void OnSoundProfileSelected()
+        {
+            if (_loadingControls || _soundProfileCombo == null)
+            {
+                return;
+            }
+            SoundProfileChoice choice = _soundProfileCombo.SelectedItem as SoundProfileChoice;
+            if (choice == null)
+            {
+                return;
+            }
+
+            _config.SoundProfileId = choice.Id;
+            if (string.Equals(choice.Id, "builtin:via", StringComparison.OrdinalIgnoreCase))
+            {
+                _config.SoundSource = "via";
+            }
+            else if (string.Equals(choice.Id, "builtin:cream", StringComparison.OrdinalIgnoreCase))
+            {
+                _config.SoundSource = "cream";
+            }
+            else if (choice.Profile != null)
+            {
+                choice.Profile.ApplyTo(_config);
+                _config.Normalize(_config.Preset);
+                LoadControlsFromConfig();
+            }
+
+            ApplyRuntimeSettings(true);
+            _configStore.Save(_config);
+            UpdateSoundProfileButtons();
+            UpdateStatus("Sound profile: " + choice.Text);
+        }
+
+        private void SaveCurrentSoundProfile()
+        {
+            if (_loadingControls)
+            {
+                return;
+            }
+            ApplyControlsToConfig();
+            SoundProfileChoice selected = _soundProfileCombo.SelectedItem as SoundProfileChoice;
+            SoundProfile profile = selected != null ? selected.Profile : null;
+            if (profile == null)
+            {
+                using (ProfileNameDialog dialog = new ProfileNameDialog())
+                {
+                    if (dialog.ShowDialog(this) != DialogResult.OK)
+                    {
+                        return;
+                    }
+                    profile = SoundProfile.FromConfig(dialog.ProfileName, _config);
+                }
+            }
+            else
+            {
+                string id = profile.Id;
+                string name = profile.Name;
+                profile = SoundProfile.FromConfig(name, _config);
+                profile.Id = id;
+            }
+
+            _soundProfileStore.Save(profile);
+            ReloadSoundProfiles("custom:" + profile.Id);
+            _config.SoundProfileId = "custom:" + profile.Id;
+            _configStore.Save(_config);
+            UpdateStatus("Saved sound profile: " + profile.Name);
+        }
+
+        private void DeleteCurrentSoundProfile()
+        {
+            SoundProfileChoice selected = _soundProfileCombo == null
+                ? null : _soundProfileCombo.SelectedItem as SoundProfileChoice;
+            if (selected == null || selected.Profile == null)
+            {
+                return;
+            }
+            DialogResult result = MessageBox.Show(
+                "Delete the sound profile '" + selected.Profile.Name + "'?",
+                "Delete sound profile", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (result != DialogResult.Yes)
+            {
+                return;
+            }
+            _soundProfileStore.Delete(selected.Profile.Id);
+            _config.SoundSource = "cream";
+            _config.SoundProfileId = "builtin:cream";
+            ReloadSoundProfiles(_config.SoundProfileId);
+            ApplyRuntimeSettings(true);
+            _configStore.Save(_config);
+            UpdateStatus("Sound profile deleted.");
+        }
+
+        private void ReloadSoundProfiles(string selectedId)
+        {
+            _soundProfiles.Clear();
+            List<SoundProfile> loaded = _soundProfileStore.LoadAll();
+            for (int i = 0; i < loaded.Count; i++)
+            {
+                _soundProfiles.Add(loaded[i]);
+            }
+            _config.SoundProfileId = selectedId;
+            bool previous = _loadingControls;
+            _loadingControls = true;
+            try
+            {
+                LoadSoundProfileCombo();
+            }
+            finally
+            {
+                _loadingControls = previous;
+            }
+        }
+
+        private void UpdateSoundProfileButtons()
+        {
+            if (_deleteProfileButton == null || _saveProfileButton == null || _soundProfileCombo == null)
+            {
+                return;
+            }
+            SoundProfileChoice choice = _soundProfileCombo.SelectedItem as SoundProfileChoice;
+            bool custom = choice != null && choice.Profile != null;
+            _deleteProfileButton.Enabled = custom;
+            _saveProfileButton.Text = custom ? "Update" : "Save";
+        }
+
         private void LoadControlsFromConfig()
         {
             _loadingControls = true;
             try
             {
+                LoadSoundProfileCombo();
                 LoadPresetCombo(_presetCombo, _config.Preset);
                 LoadPresetCombo(_mousePresetCombo, _config.MousePreset);
 
@@ -6746,6 +7380,20 @@ namespace CreamyKeysDesktop
 
         private void ApplyControlsToConfig()
         {
+            SoundProfileChoice profileChoice = _soundProfileCombo == null
+                ? null : _soundProfileCombo.SelectedItem as SoundProfileChoice;
+            if (profileChoice != null)
+            {
+                _config.SoundProfileId = profileChoice.Id;
+                if (string.Equals(profileChoice.Id, "builtin:via", StringComparison.OrdinalIgnoreCase))
+                {
+                    _config.SoundSource = "via";
+                }
+                else if (string.Equals(profileChoice.Id, "builtin:cream", StringComparison.OrdinalIgnoreCase))
+                {
+                    _config.SoundSource = "cream";
+                }
+            }
             PresetComboItem selected = _presetCombo.SelectedItem as PresetComboItem;
             if (selected != null)
             {
@@ -7286,7 +7934,7 @@ namespace CreamyKeysDesktop
                 _lastPlayTicks = now;
             }
 
-            PlayKeyboardSound(PhysicalButtonIdForVk(vkCode));
+            PlayKeyboardSound(PhysicalButtonIdForVk(vkCode), vkCode);
         }
 
         private void OnMouseButtonPressed(string buttonId)
@@ -7328,7 +7976,7 @@ namespace CreamyKeysDesktop
             }
             else
             {
-                PlayKeyboardSound(e.ButtonId);
+                PlayKeyboardSound(e.ButtonId, e.VkCode);
             }
         }
 
@@ -7338,11 +7986,21 @@ namespace CreamyKeysDesktop
             UpdateStatus("Device customization saved.");
         }
 
-        private void PlayKeyboardSound(string buttonId)
+        private void PlayKeyboardSound(string buttonId, int virtualKeyCode)
         {
             PulseSound(0.78f);
             if (TryPlayCustomButtonSound(buttonId))
             {
+                return;
+            }
+            if (string.Equals(buttonId, "key.Power", StringComparison.OrdinalIgnoreCase))
+            {
+                _audio.PlayPowerTone();
+                return;
+            }
+            if (string.Equals(_config.SoundSource, "via", StringComparison.OrdinalIgnoreCase))
+            {
+                _audio.PlayViaTone(virtualKeyCode);
                 return;
             }
 
@@ -7465,6 +8123,10 @@ namespace CreamyKeysDesktop
             {
                 return "key." + ((char)vkCode).ToString();
             }
+            if (vkCode >= 0x70 && vkCode <= 0x7B)
+            {
+                return "key.F" + (vkCode - 0x6F).ToString(CultureInfo.InvariantCulture);
+            }
 
             switch (vkCode)
             {
@@ -7500,6 +8162,13 @@ namespace CreamyKeysDesktop
                 case 0x23: return "key.End";
                 case 0x21: return "key.PgUp";
                 case 0x22: return "key.PgDn";
+                case 0x2C: return "key.Prt";
+                case 0x91: return "key.Scroll";
+                case 0x13: return "key.Pause";
+                case 0x5F: return "key.Power";
+                case 0xAD: return "key.Mute";
+                case 0xAE: return "key.VolumeDown";
+                case 0xAF: return "key.VolumeUp";
                 case 0x60: return "key.Num0";
                 case 0x61: return "key.Num1";
                 case 0x62: return "key.Num2";
@@ -7986,6 +8655,25 @@ namespace CreamyKeysDesktop
             public override string ToString()
             {
                 return Preset.DisplayName + " (" + Preset.Count.ToString(CultureInfo.InvariantCulture) + ")";
+            }
+        }
+
+        private sealed class SoundProfileChoice
+        {
+            public readonly string Id;
+            public readonly string Text;
+            public readonly SoundProfile Profile;
+
+            public SoundProfileChoice(string id, string text, SoundProfile profile)
+            {
+                Id = id;
+                Text = text;
+                Profile = profile;
+            }
+
+            public override string ToString()
+            {
+                return Text;
             }
         }
 
