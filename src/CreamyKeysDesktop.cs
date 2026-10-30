@@ -125,7 +125,7 @@ namespace CreamyKeysDesktop
                     form.Show();
                     Application.DoEvents();
 
-                    if (page == 4)
+                    if (page == 5)
                     {
                         using (WelcomeForm welcome = new WelcomeForm(form.Icon, delegate { }))
                         {
@@ -141,7 +141,7 @@ namespace CreamyKeysDesktop
                         return 0;
                     }
 
-                    if (page == 5)
+                    if (page == 6)
                     {
                         Action noop = delegate { };
                         using (TrayMenuForm tray = new TrayMenuForm(
@@ -160,7 +160,7 @@ namespace CreamyKeysDesktop
                         return 0;
                     }
 
-                    if (page == 6)
+                    if (page == 7)
                     {
                         using (UserGuideForm guide = new UserGuideForm(form.Icon))
                         {
@@ -176,7 +176,7 @@ namespace CreamyKeysDesktop
                         return 0;
                     }
 
-                    if (page == 7)
+                    if (page == 8)
                     {
                         using (SplashForm splash = new SplashForm())
                         {
@@ -227,7 +227,7 @@ namespace CreamyKeysDesktop
         {
             int parsed;
             return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed)
-                ? Math.Max(0, Math.Min(7, parsed))
+                ? Math.Max(0, Math.Min(8, parsed))
                 : 0;
         }
 
@@ -302,10 +302,20 @@ namespace CreamyKeysDesktop
                 AppConfig exported = AppConfig.Defaults(presets[0].Id);
                 exported.MouseVolume = 73;
                 exported.ReducedMotion = true;
+                exported.AnimationFps = 120;
+                exported.ButtonOverrides["custom.smoke"] = new VirtualButtonConfig
+                {
+                    Label = "F13",
+                    VirtualKeyCode = (int)Keys.F13,
+                    IsCustom = true
+                };
                 store.SaveToPath(exported, roundTripPath);
                 AppConfig imported = store.LoadFromPath(roundTripPath, presets[0].Id);
                 if (imported.ConfigVersion != AppConfig.CurrentVersion ||
-                    imported.MouseVolume != 73 || !imported.ReducedMotion)
+                    imported.MouseVolume != 73 || !imported.ReducedMotion ||
+                    imported.AnimationFps != 120 ||
+                    !imported.ButtonOverrides.ContainsKey("custom.smoke") ||
+                    !imported.ButtonOverrides["custom.smoke"].IsCustom)
                 {
                     return 7;
                 }
@@ -339,6 +349,8 @@ namespace CreamyKeysDesktop
         public string SoundPath { get; set; }
         public int OffsetX { get; set; }
         public int OffsetY { get; set; }
+        public int VirtualKeyCode { get; set; }
+        public bool IsCustom { get; set; }
 
         public bool IsEmpty()
         {
@@ -346,13 +358,15 @@ namespace CreamyKeysDesktop
                    string.IsNullOrWhiteSpace(IconText) &&
                    string.IsNullOrWhiteSpace(SoundPath) &&
                    OffsetX == 0 &&
-                   OffsetY == 0;
+                   OffsetY == 0 &&
+                   VirtualKeyCode == 0 &&
+                   !IsCustom;
         }
     }
 
     public sealed class AppConfig
     {
-        public const int CurrentVersion = 8;
+        public const int CurrentVersion = 10;
 
         public int ConfigVersion { get; set; }
         public bool Enabled { get; set; }
@@ -389,6 +403,7 @@ namespace CreamyKeysDesktop
         public bool ReducedMotion { get; set; }
         public bool HasCompletedWelcome { get; set; }
         public bool ShowWelcomeOnStartup { get; set; }
+        public int AnimationFps { get; set; }
 
         public AppConfig()
         {
@@ -432,6 +447,7 @@ namespace CreamyKeysDesktop
             config.ReducedMotion = false;
             config.HasCompletedWelcome = false;
             config.ShowWelcomeOnStartup = true;
+            config.AnimationFps = 60;
             return config;
         }
 
@@ -478,6 +494,10 @@ namespace CreamyKeysDesktop
             {
                 ShowWelcomeOnStartup = !HasCompletedWelcome;
             }
+            if (ConfigVersion < 9)
+            {
+                AnimationFps = 60;
+            }
             ConfigVersion = CurrentVersion;
 
             if (string.IsNullOrWhiteSpace(Preset))
@@ -518,6 +538,10 @@ namespace CreamyKeysDesktop
             RandomPitchPercent = Clamp(RandomPitchPercent, 0, 20);
             CooldownMs = Clamp(CooldownMs, 0, 80);
             MaxVoices = Clamp(MaxVoices, 4, 64);
+            if (AnimationFps != 30 && AnimationFps != 120)
+            {
+                AnimationFps = 60;
+            }
 
             if (ExcludedProcesses == null)
             {
@@ -2187,6 +2211,7 @@ namespace CreamyKeysDesktop
         private int _shadowDepth;
         private int _shadowOffsetX;
         private int _shadowOffsetY;
+        private Rectangle _addButtonBounds;
 
         public event EventHandler<VirtualButtonEventArgs> ButtonActivated;
         public event EventHandler ButtonCustomizationChanged;
@@ -2365,12 +2390,18 @@ namespace CreamyKeysDesktop
             {
                 DrawButton(g, _buttons[i]);
             }
+            DrawAddButton(g);
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
             EnsureLayout();
+            if (e.Button == MouseButtons.Left && _addButtonBounds.Contains(e.Location))
+            {
+                CaptureCustomKey();
+                return;
+            }
             VirtualButtonDefinition button = HitTest(e.Location);
             if (button == null)
             {
@@ -2441,16 +2472,20 @@ namespace CreamyKeysDesktop
             Rectangle r = button.Bounds;
             if (_shadowEnabled && _shadowDepth > 0)
             {
-                using (SolidBrush shadow = new SolidBrush(Color.FromArgb(Math.Min(90, _shadowDepth * 3), 0, 0, 0)))
+                Rectangle shadowBounds = new Rectangle(r.X + _shadowOffsetX, r.Y + _shadowOffsetY,
+                    r.Width, r.Height);
+                using (GraphicsPath shadowPath = RoundedRect(shadowBounds, 6))
+                using (SolidBrush shadow = new SolidBrush(Color.FromArgb(Math.Min(62, _shadowDepth * 2), 0, 0, 0)))
                 {
-                    g.FillRectangle(shadow, r.X + _shadowOffsetX, r.Y + _shadowOffsetY, r.Width, r.Height);
+                    g.FillPath(shadow, shadowPath);
                 }
             }
+            using (GraphicsPath path = RoundedRect(r, 6))
             using (SolidBrush brush = new SolidBrush(fill))
             using (Pen pen = new Pen(border))
             {
-                g.FillRectangle(brush, r);
-                g.DrawRectangle(pen, r);
+                g.FillPath(brush, path);
+                g.DrawPath(pen, path);
             }
 
             StringFormat format = new StringFormat();
@@ -2565,6 +2600,7 @@ namespace CreamyKeysDesktop
         private void EnsureLayout()
         {
             _buttons.Clear();
+            _addButtonBounds = Rectangle.Empty;
 
             int bottomReserve = Math.Max(84, Height / 4);
             Rectangle content = new Rectangle(
@@ -2581,7 +2617,128 @@ namespace CreamyKeysDesktop
                 BuildKeyboardButtons(content, true);
                 CenterKeyboardButtonsInArea(content, false);
             }
+            BuildCustomButtons();
+        }
 
+        private void BuildCustomButtons()
+        {
+            List<KeyValuePair<string, VirtualButtonConfig>> custom =
+                new List<KeyValuePair<string, VirtualButtonConfig>>();
+            foreach (KeyValuePair<string, VirtualButtonConfig> pair in _overrides)
+            {
+                if (pair.Value != null && pair.Value.IsCustom && pair.Value.VirtualKeyCode > 0)
+                {
+                    custom.Add(pair);
+                }
+            }
+            custom.Sort(delegate(KeyValuePair<string, VirtualButtonConfig> left,
+                KeyValuePair<string, VirtualButtonConfig> right)
+            {
+                return string.Compare(left.Key, right.Key, StringComparison.OrdinalIgnoreCase);
+            });
+
+            int tileWidth = Math.Max(58, Math.Min(82, Width / 10));
+            int tileHeight = 38;
+            int gap = 8;
+            int visible = Math.Min(custom.Count, Math.Max(1, (Width - 64) / (tileWidth + gap) - 1));
+            int groupWidth = ((visible + 1) * tileWidth) + (visible * gap);
+            int x = Math.Max(16, (Width - groupWidth) / 2);
+            int y = Math.Max(66, Height - 58);
+            for (int i = 0; i < visible; i++)
+            {
+                VirtualButtonDefinition def = new VirtualButtonDefinition();
+                def.Id = custom[i].Key;
+                def.Label = string.IsNullOrWhiteSpace(custom[i].Value.Label)
+                    ? KeyName(custom[i].Value.VirtualKeyCode) : custom[i].Value.Label;
+                def.Kind = "custom";
+                def.VkCode = custom[i].Value.VirtualKeyCode;
+                def.Bounds = new Rectangle(x, y, tileWidth, tileHeight);
+                ApplyButtonOffset(def);
+                _buttons.Add(def);
+                x += tileWidth + gap;
+            }
+            _addButtonBounds = new Rectangle(x, y, tileWidth, tileHeight);
+        }
+
+        private void DrawAddButton(Graphics g)
+        {
+            if (_addButtonBounds.Width <= 0)
+            {
+                return;
+            }
+            using (GraphicsPath path = RoundedRect(_addButtonBounds, 8))
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(232, 241, 236)))
+            using (Pen pen = new Pen(Color.FromArgb(156, 178, 166), 1.0f))
+            {
+                pen.DashStyle = DashStyle.Dash;
+                g.FillPath(brush, path);
+                g.DrawPath(pen, path);
+            }
+            using (Font plusFont = new Font("Segoe UI", 15.0f, FontStyle.Regular))
+            using (SolidBrush text = new SolidBrush(Color.FromArgb(43, 111, 84)))
+            {
+                StringFormat format = new StringFormat();
+                format.Alignment = StringAlignment.Center;
+                format.LineAlignment = StringAlignment.Center;
+                g.DrawString("+", plusFont, text, _addButtonBounds, format);
+                format.Dispose();
+            }
+        }
+
+        private void CaptureCustomKey()
+        {
+            using (KeyCaptureDialog dialog = new KeyCaptureDialog())
+            {
+                if (dialog.ShowDialog(FindForm()) != DialogResult.OK || dialog.VirtualKeyCode <= 0)
+                {
+                    return;
+                }
+                string id = "custom." + DateTime.UtcNow.Ticks.ToString(CultureInfo.InvariantCulture);
+                VirtualButtonConfig config = new VirtualButtonConfig();
+                config.IsCustom = true;
+                config.VirtualKeyCode = dialog.VirtualKeyCode;
+                config.Label = KeyName(dialog.VirtualKeyCode);
+                config.IconText = KeyIcon(dialog.VirtualKeyCode);
+                _overrides[id] = config;
+                Invalidate();
+                EventHandler handler = ButtonCustomizationChanged;
+                if (handler != null)
+                {
+                    handler(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        private static string KeyName(int virtualKeyCode)
+        {
+            Keys key = (Keys)virtualKeyCode;
+            switch (key)
+            {
+                case Keys.VolumeMute: return "Mute";
+                case Keys.VolumeDown: return "Vol -";
+                case Keys.VolumeUp: return "Vol +";
+                case Keys.MediaNextTrack: return "Next";
+                case Keys.MediaPreviousTrack: return "Prev";
+                case Keys.MediaPlayPause: return "Play";
+                case Keys.MediaStop: return "Stop";
+                case Keys.Oemtilde: return "`";
+                default: return key.ToString();
+            }
+        }
+
+        private static string KeyIcon(int virtualKeyCode)
+        {
+            Keys key = (Keys)virtualKeyCode;
+            switch (key)
+            {
+                case Keys.VolumeMute: return "M";
+                case Keys.VolumeDown: return "-";
+                case Keys.VolumeUp: return "+";
+                case Keys.MediaNextTrack: return ">|";
+                case Keys.MediaPreviousTrack: return "|<";
+                case Keys.MediaPlayPause: return ">";
+                default: return "";
+            }
         }
 
         private void CenterKeyboardButtonsInArea(Rectangle area, bool moveMouseWithKeyboard)
@@ -3017,8 +3174,28 @@ namespace CreamyKeysDesktop
             menu.MenuItems.Add(new MenuItem("Test sound", delegate { ActivateButton(button); }));
             menu.MenuItems.Add(new MenuItem("Customize...", delegate { EditButton(button); }));
             menu.MenuItems.Add("-");
-            menu.MenuItems.Add(new MenuItem("Clear customization", delegate { ClearButton(button); }));
+            VirtualButtonConfig config = GetOverride(button.Id);
+            if (config.IsCustom)
+            {
+                menu.MenuItems.Add(new MenuItem("Delete key...", delegate { DeleteCustomButton(button); }));
+            }
+            else
+            {
+                menu.MenuItems.Add(new MenuItem("Clear customization", delegate { ClearButton(button); }));
+            }
             menu.Show(this, location);
+        }
+
+        private void DeleteCustomButton(VirtualButtonDefinition button)
+        {
+            DialogResult result = MessageBox.Show(FindForm(),
+                "Delete the custom " + button.Label + " key?", "CreamyKeys",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Question, MessageBoxDefaultButton.Button2);
+            if (result != DialogResult.Yes)
+            {
+                return;
+            }
+            ClearButton(button);
         }
 
         private void ActivateButton(VirtualButtonDefinition button)
@@ -3087,6 +3264,8 @@ namespace CreamyKeysDesktop
                 clone.SoundPath = source.SoundPath;
                 clone.OffsetX = source.OffsetX;
                 clone.OffsetY = source.OffsetY;
+                clone.VirtualKeyCode = source.VirtualKeyCode;
+                clone.IsCustom = source.IsCustom;
             }
             return clone;
         }
@@ -3161,6 +3340,78 @@ namespace CreamyKeysDesktop
         }
     }
 
+    internal sealed class KeyCaptureDialog : Form
+    {
+        private readonly Label _keyLabel;
+
+        public int VirtualKeyCode { get; private set; }
+
+        public KeyCaptureDialog()
+        {
+            Text = "Add a virtual key";
+            StartPosition = FormStartPosition.CenterParent;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ShowInTaskbar = false;
+            KeyPreview = true;
+            ClientSize = new Size(440, 238);
+            BackColor = UiTheme.Content;
+            ForeColor = UiTheme.Ink;
+            Font = UiTheme.BodyFont(9.2f, FontStyle.Regular);
+
+            Label title = new Label();
+            title.Text = "Press the key you want to add";
+            title.Font = UiTheme.DisplayFont(14.0f, FontStyle.Bold);
+            title.ForeColor = UiTheme.Ink;
+            title.SetBounds(28, 24, 384, 38);
+            Controls.Add(title);
+
+            Label hint = new Label();
+            hint.Text = "CreamyKeys will detect its Windows key code and create a named button below the keyboard.";
+            hint.ForeColor = UiTheme.InkMuted;
+            hint.SetBounds(28, 66, 384, 46);
+            Controls.Add(hint);
+
+            _keyLabel = new Label();
+            _keyLabel.Text = "Waiting for input...";
+            _keyLabel.Font = UiTheme.BodyFont(10.0f, FontStyle.Bold);
+            _keyLabel.ForeColor = UiTheme.ActionActive;
+            _keyLabel.BackColor = Color.FromArgb(229, 239, 233);
+            _keyLabel.BorderStyle = BorderStyle.FixedSingle;
+            _keyLabel.TextAlign = ContentAlignment.MiddleCenter;
+            _keyLabel.SetBounds(28, 126, 244, 50);
+            Controls.Add(_keyLabel);
+
+            ThemeButton cancel = new ThemeButton();
+            cancel.Text = "Cancel";
+            cancel.SetBounds(286, 132, 126, 40);
+            cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
+            Controls.Add(cancel);
+            CancelButton = cancel;
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            Keys key = keyData & Keys.KeyCode;
+            if (key == Keys.Escape)
+            {
+                DialogResult = DialogResult.Cancel;
+                Close();
+                return true;
+            }
+            if (key == Keys.None)
+            {
+                return base.ProcessCmdKey(ref msg, keyData);
+            }
+            VirtualKeyCode = (int)key;
+            _keyLabel.Text = key.ToString();
+            DialogResult = DialogResult.OK;
+            Close();
+            return true;
+        }
+    }
+
     internal sealed class VirtualButtonDialog : Form
     {
         private readonly TextBox _labelBox;
@@ -3168,11 +3419,15 @@ namespace CreamyKeysDesktop
         private readonly TextBox _soundBox;
         private readonly NumericUpDown _offsetXBox;
         private readonly NumericUpDown _offsetYBox;
+        private readonly bool _isCustom;
+        private readonly int _virtualKeyCode;
 
         public VirtualButtonConfig ResultConfig { get; private set; }
 
         public VirtualButtonDialog(string defaultLabel, VirtualButtonConfig config)
         {
+            _isCustom = config != null && config.IsCustom;
+            _virtualKeyCode = config == null ? 0 : config.VirtualKeyCode;
             Text = "Customize " + defaultLabel;
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -3291,11 +3546,13 @@ namespace CreamyKeysDesktop
             config.SoundPath = _soundBox.Text.Trim();
             config.OffsetX = (int)_offsetXBox.Value;
             config.OffsetY = (int)_offsetYBox.Value;
+            config.IsCustom = _isCustom;
+            config.VirtualKeyCode = _virtualKeyCode;
             ResultConfig = config;
         }
     }
 
-    internal sealed class CleanTrackBar : Control
+    internal sealed class CleanTrackBar : Control, IAnimationRateControl
     {
         private readonly System.Windows.Forms.Timer _animationTimer;
         private int _minimum;
@@ -3328,8 +3585,13 @@ namespace CreamyKeysDesktop
             _tickStyle = TickStyle.None;
             _pressedZone = -1;
             _animationTimer = new System.Windows.Forms.Timer();
-            _animationTimer.Interval = 16;
+            _animationTimer.Interval = UiTheme.AnimationInterval;
             _animationTimer.Tick += AnimateValue;
+        }
+
+        public void SetAnimationFps(int fps)
+        {
+            _animationTimer.Interval = UiTheme.IntervalForFps(fps);
         }
 
         public int Minimum
@@ -3369,10 +3631,11 @@ namespace CreamyKeysDesktop
                     return;
                 }
                 _value = next;
-                if (!IsHandleCreated || _dragging)
+                if (!IsHandleCreated || _dragging || UiTheme.ReducedMotion)
                 {
                     _visualValue = next;
                     _animationVelocity = 0.0f;
+                    _animationTimer.Stop();
                 }
                 else
                 {
@@ -3629,7 +3892,15 @@ namespace CreamyKeysDesktop
 
         private void AnimateValue(object sender, EventArgs e)
         {
-            const float dt = 0.016f;
+            if (UiTheme.ReducedMotion)
+            {
+                _visualValue = _value;
+                _animationVelocity = 0.0f;
+                _animationTimer.Stop();
+                Invalidate();
+                return;
+            }
+            float dt = _animationTimer.Interval / 1000.0f;
             const float stiffness = 520.0f;
             const float damping = 46.0f;
             float displacement = _value - _visualValue;
@@ -4218,6 +4489,7 @@ namespace CreamyKeysDesktop
         private CheckBox _runStartupCheck;
         private CheckBox _reducedMotionCheck;
         private CheckBox _showWelcomeCheck;
+        private ComboBox _animationFpsCombo;
         private NumericUpDown _keyboardLayersNumber;
         private NumericUpDown _mouseLayersNumber;
         private CleanTrackBar _volumeTrack;
@@ -4284,6 +4556,8 @@ namespace CreamyKeysDesktop
             _presets = SoundLibrary.Scan(_assetsRoot);
             string fallbackPreset = _presets.Count > 0 ? _presets[0].Id : "";
             _config = _configStore.Load(fallbackPreset);
+            UiTheme.AnimationFps = _config.AnimationFps;
+            UiTheme.ReducedMotion = _config.ReducedMotion;
             if (FindPreset(_config.Preset) == null && fallbackPreset.Length > 0)
             {
                 _config.Preset = fallbackPreset;
@@ -4507,7 +4781,10 @@ namespace CreamyKeysDesktop
             Button navApps = AddSidebarButton(sidebar, "Allowed apps", 270, false,
                 delegate { NavigateToPage(3); });
             ApplySidebarIcon(navApps, "panels-top-left");
-            _sidebarNavButtons = new Button[] { navDashboard, navSound, navBehavior, navApps };
+            Button navSettings = AddSidebarButton(sidebar, "Settings", 316, false,
+                delegate { NavigateToPage(4); });
+            ApplySidebarIcon(navSettings, "settings");
+            _sidebarNavButtons = new Button[] { navDashboard, navSound, navBehavior, navApps, navSettings };
 
             _sidebarIndicator = new SlidingIndicator();
             _sidebarIndicator.SetBounds(18, navDashboard.Top + 8, 5, 24);
@@ -4516,24 +4793,10 @@ namespace CreamyKeysDesktop
 
             Label toolsLabel = CreateSidebarSectionLabel("TOOLS", 22, 0);
             toolsLabel.Anchor = AnchorStyles.Left | AnchorStyles.Bottom;
-            toolsLabel.Top = sidebar.ClientSize.Height - 262;
+            toolsLabel.Top = sidebar.ClientSize.Height - 174;
             sidebar.Controls.Add(toolsLabel);
 
-            Button importButton = CreateSidebarButton("Import settings", false);
-            importButton.SetBounds(18, sidebar.ClientSize.Height - 228, 224, 38);
-            importButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-            importButton.Click += delegate { ImportSettings(); };
-            ApplySidebarIcon(importButton, "file-input");
-            sidebar.Controls.Add(importButton);
-
-            Button exportButton = CreateSidebarButton("Export settings", false);
-            exportButton.SetBounds(18, sidebar.ClientSize.Height - 184, 224, 38);
-            exportButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
-            exportButton.Click += delegate { ExportSettings(); };
-            ApplySidebarIcon(exportButton, "file-output");
-            sidebar.Controls.Add(exportButton);
-
-            Button welcomeButton = CreateSidebarButton("Welcome\u00a0pop-up", false);
+            Button welcomeButton = CreateSidebarButton("Trailer", false);
             welcomeButton.SetBounds(18, sidebar.ClientSize.Height - 140, 224, 38);
             welcomeButton.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
             welcomeButton.Click += delegate { ShowWelcomeTour(); };
@@ -4619,20 +4882,26 @@ namespace CreamyKeysDesktop
             TabPage soundPage = CreateTabPage("Sound");
             TabPage behaviorPage = CreateTabPage("Behavior");
             TabPage appsPage = CreateTabPage("Apps");
+            TabPage settingsPage = CreateTabPage("Settings");
             _pageTabs.TabPages.Add(devicePage);
             _pageTabs.TabPages.Add(soundPage);
             _pageTabs.TabPages.Add(behaviorPage);
             _pageTabs.TabPages.Add(appsPage);
+            _pageTabs.TabPages.Add(settingsPage);
 
             BuildDashboardPage(devicePage);
             BuildSoundPage(soundPage);
             BuildBehaviorPage(behaviorPage);
             BuildAppsPage(appsPage);
+            BuildSettingsPage(settingsPage);
 
-            Panel actions = new Panel();
+            ModernPanel actions = new ModernPanel();
             actions.Dock = DockStyle.Fill;
             actions.Margin = new Padding(0, 8, 0, 0);
-            actions.BackColor = UiTheme.Surface;
+            actions.FillColor = UiTheme.Surface;
+            actions.BorderColor = UiTheme.Border;
+            actions.CornerRadius = 11;
+            actions.ShadowSize = 0;
             workspace.Controls.Add(actions, 0, 2);
 
             Button testButton = CreateButton("Test sound", false);
@@ -4709,7 +4978,7 @@ namespace CreamyKeysDesktop
             layout.ColumnCount = 1;
             layout.RowCount = 2;
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100.0f));
-            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 126.0f));
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 164.0f));
             layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100.0f));
             devicePage.Controls.Add(layout);
 
@@ -4754,6 +5023,14 @@ namespace CreamyKeysDesktop
             _mouseStyleCombo.SelectedIndexChanged += delegate { OnSettingChanged(false); };
             deviceCard.Controls.Add(_mouseStyleCombo);
 
+            _keyboardSoundsCheck = CreateDarkCheck("Keyboard sound", 0, 16);
+            _keyboardSoundsCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            deviceCard.Controls.Add(_keyboardSoundsCheck);
+
+            _showMouseCheck = CreateDarkCheck("Mouse overlay", 0, 53);
+            _showMouseCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            deviceCard.Controls.Add(_showMouseCheck);
+
             _editModeCheck = CreateDarkCheck("Edit", 0, 16);
             _editModeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             deviceCard.Controls.Add(_editModeCheck);
@@ -4782,14 +5059,20 @@ namespace CreamyKeysDesktop
                 _mouseStyleCombo.SetBounds(comboX, 53, comboWidth, 30);
                 int toggleX = comboX + comboWidth + (compact ? 8 : 16);
                 _editModeCheck.Text = "Edit";
-                _autoDetectCheck.Text = compact ? "Auto" : "Auto detect";
-                int toggleWidth = compact ? Math.Max(104, width - toggleX - 12) : 190;
-                _editModeCheck.SetBounds(toggleX, 14, toggleWidth, 32);
-                _autoDetectCheck.SetBounds(toggleX, 51, toggleWidth, 32);
-                _detectButton.SetBounds(Math.Max(12, width - 102), 84, 82, 34);
+                _autoDetectCheck.Text = "Auto";
+                int toggleWidth = compact ? Math.Max(96, width - toggleX - 12) : 190;
+                _keyboardSoundsCheck.SetBounds(toggleX, 14, toggleWidth, 32);
+                _showMouseCheck.SetBounds(toggleX, 51, toggleWidth, 32);
+                _keyboardSoundsCheck.Text = compact ? "Key" : "Key sound";
+                _showMouseCheck.Text = "Mouse";
+                _editModeCheck.SetBounds(controlsX, 92, compact ? 96 : 108, 32);
+                _autoDetectCheck.SetBounds(controlsX + (compact ? 102 : 116), 92,
+                    compact ? 100 : 142, 32);
+                _detectButton.SetBounds(Math.Max(12, width - 102), 91, 82, 34);
                 int waveWidth = Math.Max(130, Math.Min(286, controlsX - 42));
                 _pulseControl.Width = waveWidth;
                 deviceTitle.Width = Math.Max(150, controlsX - 44);
+                deviceTitle.Text = compact ? "Devices" : "Virtual devices";
                 deviceSub.Text = compact ? "Keyboard + mouse" :
                     "Separate packs for keyboard and mouse";
                 deviceSub.Width = Math.Max(150, controlsX - 44);
@@ -5197,50 +5480,42 @@ namespace CreamyKeysDesktop
             _enabledCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_enabledCheck);
 
-            _keyboardSoundsCheck = CreateLightCheck("Keyboard sound", 242, 64);
-            _keyboardSoundsCheck.CheckedChanged += delegate { OnSettingChanged(false); };
-            card.Controls.Add(_keyboardSoundsCheck);
-
-            _mouseSoundsCheck = CreateLightCheck("Mouse sound", 28, 102);
+            _mouseSoundsCheck = CreateLightCheck("Mouse sound", 242, 64);
             _mouseSoundsCheck.CheckedChanged += delegate { OnSettingChanged(false); };
             card.Controls.Add(_mouseSoundsCheck);
 
-            _showMouseCheck = CreateLightCheck("Show virtual mouse", 242, 102);
-            _showMouseCheck.CheckedChanged += delegate { OnSettingChanged(false); };
-            card.Controls.Add(_showMouseCheck);
-
-            Label presetLabel = CreateLabel("Keyboard preset", 28, 152, 146, 26);
+            Label presetLabel = CreateLabel("Keyboard preset", 28, 116, 146, 26);
             card.Controls.Add(presetLabel);
 
             _presetCombo = new ComboBox();
             _presetCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             _presetCombo.FlatStyle = FlatStyle.Flat;
-            _presetCombo.SetBounds(180, 148, 310, 30);
+            _presetCombo.SetBounds(180, 112, 310, 30);
             _presetCombo.SelectedIndexChanged += delegate { OnSettingChanged(true); };
             card.Controls.Add(_presetCombo);
 
             Button reloadButton = CreateButton("Reload", false);
-            reloadButton.SetBounds(506, 146, 90, 34);
+            reloadButton.SetBounds(506, 110, 90, 34);
             reloadButton.Click += delegate { ReloadPresets(); };
             card.Controls.Add(reloadButton);
 
-            Label mousePresetLabel = CreateLabel("Mouse preset", 28, 194, 146, 26);
+            Label mousePresetLabel = CreateLabel("Mouse preset", 28, 158, 146, 26);
             card.Controls.Add(mousePresetLabel);
 
             _mousePresetCombo = new ComboBox();
             _mousePresetCombo.DropDownStyle = ComboBoxStyle.DropDownList;
             _mousePresetCombo.FlatStyle = FlatStyle.Flat;
-            _mousePresetCombo.SetBounds(180, 190, 310, 30);
+            _mousePresetCombo.SetBounds(180, 154, 310, 30);
             _mousePresetCombo.SelectedIndexChanged += delegate { OnSettingChanged(true); };
             card.Controls.Add(_mousePresetCombo);
 
-            AddSoundSlider(card, "Keyboard volume", 246, out _volumeTrack, out _volumeLabel, 0, 100);
-            AddSoundSlider(card, "Mouse volume", 304, out _mouseVolumeTrack, out _mouseVolumeLabel, 0, 100);
-            AddSoundSlider(card, "Key boost", 362, out _keyGainTrack, out _keyGainLabel, 50, 400);
+            AddSoundSlider(card, "Keyboard volume", 198, out _volumeTrack, out _volumeLabel, 0, 100);
+            AddSoundSlider(card, "Mouse volume", 248, out _mouseVolumeTrack, out _mouseVolumeLabel, 0, 100);
+            AddSoundSlider(card, "Key boost", 298, out _keyGainTrack, out _keyGainLabel, 50, 400);
             _keyGainTrack.TickFrequency = 50;
             _keyGainTrack.LargeChange = 25;
-            AddSoundSlider(card, "Volume variation", 420, out _randomVolumeTrack, out _randomVolumeLabel, 0, 50);
-            AddSoundSlider(card, "Pitch variation", 478, out _randomPitchTrack, out _randomPitchLabel, 0, 20);
+            AddSoundSlider(card, "Volume variation", 348, out _randomVolumeTrack, out _randomVolumeLabel, 0, 50);
+            AddSoundSlider(card, "Pitch variation", 398, out _randomPitchTrack, out _randomPitchLabel, 0, 20);
 
             EventHandler arrange = delegate
             {
@@ -5315,17 +5590,7 @@ namespace CreamyKeysDesktop
             _mouseLayersNumber.ValueChanged += delegate { OnSettingChanged(false); };
             behavior.Controls.Add(_mouseLayersNumber);
 
-            _reducedMotionCheck = CreateLightCheck("Reduce animations", 322, 242);
-            _reducedMotionCheck.Width = 280;
-            _reducedMotionCheck.CheckedChanged += delegate { OnSettingChanged(false); };
-            behavior.Controls.Add(_reducedMotionCheck);
-
-            _showWelcomeCheck = CreateLightCheck("Welcome pop-up", 28, 242);
-            _showWelcomeCheck.Width = 280;
-            _showWelcomeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
-            behavior.Controls.Add(_showWelcomeCheck);
-
-            ModernPanel shadow = CreateInnerCard(8, 310, 620, 230);
+            ModernPanel shadow = CreateInnerCard(8, 266, 620, 230);
             shadow.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             behaviorPage.Controls.Add(shadow);
 
@@ -5343,8 +5608,8 @@ namespace CreamyKeysDesktop
             EventHandler arrange = delegate
             {
                 int width = Math.Max(420, behaviorPage.ClientSize.Width - 16);
-                behavior.SetBounds(8, 8, width, 288);
-                shadow.SetBounds(8, 310, width, Math.Max(220, behaviorPage.ClientSize.Height - 318));
+                behavior.SetBounds(8, 8, width, 244);
+                shadow.SetBounds(8, 266, width, Math.Max(220, behaviorPage.ClientSize.Height - 274));
             };
             behaviorPage.Resize += arrange;
             arrange(behaviorPage, EventArgs.Empty);
@@ -5493,6 +5758,148 @@ namespace CreamyKeysDesktop
             _excludedBox = new TextBox();
             _excludedBox.Visible = false;
             appsPage.Controls.Add(_excludedBox);
+        }
+
+        private void BuildSettingsPage(TabPage settingsPage)
+        {
+            settingsPage.Padding = new Padding(8);
+
+            ModernPanel motion = CreateInnerCard(8, 8, 620, 224);
+            motion.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            settingsPage.Controls.Add(motion);
+
+            Label title = CreateCardTitle("Experience", 24, 18, 260, 30);
+            motion.Controls.Add(title);
+
+            Label hint = CreateMutedLabel(
+                "Set motion quality and startup behavior.",
+                26, 48, 560, 34);
+            hint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            motion.Controls.Add(hint);
+
+            _reducedMotionCheck = CreateLightCheck("Reduce animations", 28, 92);
+            _reducedMotionCheck.Width = 268;
+            _reducedMotionCheck.CheckedChanged += delegate { OnReducedMotionChanged(); };
+            motion.Controls.Add(_reducedMotionCheck);
+
+            _showWelcomeCheck = CreateLightCheck("Trailer on startup", 318, 92);
+            _showWelcomeCheck.Width = 252;
+            _showWelcomeCheck.CheckedChanged += delegate { OnSettingChanged(false); };
+            motion.Controls.Add(_showWelcomeCheck);
+
+            Label fpsLabel = CreateLabel("Motion FPS", 28, 148, 132, 28);
+            motion.Controls.Add(fpsLabel);
+
+            _animationFpsCombo = new ComboBox();
+            _animationFpsCombo.DropDownStyle = ComboBoxStyle.DropDownList;
+            _animationFpsCombo.FlatStyle = FlatStyle.Flat;
+            _animationFpsCombo.Items.Add(new ComboItem("30", "30 FPS"));
+            _animationFpsCombo.Items.Add(new ComboItem("60", "60 FPS"));
+            _animationFpsCombo.Items.Add(new ComboItem("120", "120 FPS"));
+            _animationFpsCombo.SetBounds(168, 144, 118, 32);
+            _animationFpsCombo.SelectedIndexChanged += delegate { OnAnimationFpsChanged(); };
+            motion.Controls.Add(_animationFpsCombo);
+
+            Label fpsHint = CreateMutedLabel(
+                "60 FPS is recommended. Reduce animations overrides page motion.",
+                306, 148, 292, 34);
+            fpsHint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            motion.Controls.Add(fpsHint);
+
+            ModernPanel data = CreateInnerCard(8, 246, 620, 220);
+            data.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
+            settingsPage.Controls.Add(data);
+
+            Label dataTitle = CreateCardTitle("Settings and help", 24, 18, 320, 30);
+            data.Controls.Add(dataTitle);
+
+            Label dataHint = CreateMutedLabel(
+                "Move your setup between computers and reopen guides.",
+                26, 48, 560, 34);
+            dataHint.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            data.Controls.Add(dataHint);
+
+            Button importButton = CreateButton("Import settings", false);
+            importButton.SetBounds(28, 98, 238, 40);
+            importButton.Click += delegate { ImportSettings(); };
+            data.Controls.Add(importButton);
+
+            Button exportButton = CreateButton("Export settings", true);
+            exportButton.SetBounds(276, 98, 238, 40);
+            exportButton.Click += delegate { ExportSettings(); };
+            data.Controls.Add(exportButton);
+
+            Button trailerButton = CreateButton("Trailer", false);
+            trailerButton.SetBounds(28, 150, 126, 40);
+            trailerButton.Click += delegate { ShowWelcomeTour(); };
+            data.Controls.Add(trailerButton);
+
+            Button guideButton = CreateButton("User guide", false);
+            guideButton.SetBounds(164, 150, 126, 40);
+            guideButton.Click += delegate { ShowUserGuide(); };
+            data.Controls.Add(guideButton);
+
+            Button folderButton = CreateButton("Open config folder", false);
+            folderButton.SetBounds(300, 150, 214, 40);
+            folderButton.Click += delegate { Process.Start(_configStore.ConfigDirectory); };
+            data.Controls.Add(folderButton);
+
+            EventHandler arrange = delegate
+            {
+                int width = Math.Max(500, settingsPage.ClientSize.Width - 16);
+                motion.SetBounds(8, 8, width, 224);
+                data.SetBounds(8, 246, width, Math.Max(220, settingsPage.ClientSize.Height - 254));
+                int right = Math.Max(268, motion.ClientSize.Width - 276);
+                _showWelcomeCheck.Left = right;
+                fpsHint.Left = Math.Min(306, Math.Max(300, motion.ClientSize.Width / 2));
+                fpsHint.Width = Math.Max(180, motion.ClientSize.Width - fpsHint.Left - 24);
+                int buttonWidth = Math.Max(170, (data.ClientSize.Width - 66) / 2);
+                importButton.SetBounds(28, 98, buttonWidth, 40);
+                exportButton.SetBounds(38 + buttonWidth, 98, buttonWidth, 40);
+                folderButton.Width = Math.Max(160, data.ClientSize.Width - folderButton.Left - 28);
+            };
+            settingsPage.Resize += arrange;
+            arrange(settingsPage, EventArgs.Empty);
+        }
+
+        private void OnAnimationFpsChanged()
+        {
+            if (_loadingControls || _animationFpsCombo == null)
+            {
+                return;
+            }
+            int fps;
+            if (!int.TryParse(SelectedComboValue(_animationFpsCombo, "60"), out fps))
+            {
+                fps = 60;
+            }
+            UiTheme.AnimationFps = fps;
+            ApplyAnimationFrameRate(this, UiTheme.AnimationFps);
+            OnSettingChanged(false);
+        }
+
+        private void OnReducedMotionChanged()
+        {
+            if (_loadingControls || _reducedMotionCheck == null)
+            {
+                return;
+            }
+            UiTheme.ReducedMotion = _reducedMotionCheck.Checked;
+            Invalidate(true);
+            OnSettingChanged(false);
+        }
+
+        private static void ApplyAnimationFrameRate(Control root, int fps)
+        {
+            IAnimationRateControl animated = root as IAnimationRateControl;
+            if (animated != null)
+            {
+                animated.SetAnimationFps(fps);
+            }
+            for (int i = 0; i < root.Controls.Count; i++)
+            {
+                ApplyAnimationFrameRate(root.Controls[i], fps);
+            }
         }
 
         private static ModernPanel CreateInnerCard(int x, int y, int width, int height)
@@ -5657,6 +6064,7 @@ namespace CreamyKeysDesktop
                 case 1: return "Sound library";
                 case 2: return "Behavior";
                 case 3: return "Allowed apps";
+                case 4: return "Settings";
                 default: return "Dashboard";
             }
         }
@@ -5668,7 +6076,8 @@ namespace CreamyKeysDesktop
                 case 1: return "Choose separate packs and tune natural variation.";
                 case 2: return "Control input behavior, performance and visual motion.";
                 case 3: return "Decide exactly which apps can trigger CreamyKeys.";
-                default: return "See your devices, hear changes and edit the active layout.";
+                case 4: return "Tune motion, startup and portable settings.";
+                default: return "See devices, test sound and edit the active layout.";
             }
         }
 
@@ -5683,8 +6092,8 @@ namespace CreamyKeysDesktop
                 return;
             }
 
-            int previousIndex = _pageTabs.SelectedIndex;
-            PageTransitionOverlay.Run(_pageTabs, delegate
+            _pageTabs.SuspendLayout();
+            try
             {
                 _pageTabs.SelectedIndex = index;
                 UpdateSidebarNav(_sidebarNavButtons, index);
@@ -5695,7 +6104,11 @@ namespace CreamyKeysDesktop
                 _pageTitle.Text = PageTitleForIndex(index);
                 _pageSubtitle.Text = PageSubtitleForIndex(index);
                 Text = PageTitleForIndex(index) + " - CreamyKeys";
-            }, _config.ReducedMotion, index >= previousIndex ? 1 : -1);
+            }
+            finally
+            {
+                _pageTabs.ResumeLayout(true);
+            }
         }
 
         private static Label CreateSidebarSectionLabel(string text, int x, int y)
@@ -6300,6 +6713,7 @@ namespace CreamyKeysDesktop
                 _runStartupCheck.Checked = _config.RunAtStartup;
                 _reducedMotionCheck.Checked = _config.ReducedMotion;
                 _showWelcomeCheck.Checked = _config.ShowWelcomeOnStartup;
+                SelectComboValue(_animationFpsCombo, _config.AnimationFps.ToString(CultureInfo.InvariantCulture));
                 _volumeTrack.Value = _config.Volume;
                 _mouseVolumeTrack.Value = _config.MouseVolume;
                 _keyGainTrack.Value = _config.KeyGainPercent;
@@ -6357,6 +6771,12 @@ namespace CreamyKeysDesktop
             _config.RunAtStartup = _runStartupCheck.Checked;
             _config.ReducedMotion = _reducedMotionCheck.Checked;
             _config.ShowWelcomeOnStartup = _showWelcomeCheck.Checked;
+            int animationFps;
+            if (!int.TryParse(SelectedComboValue(_animationFpsCombo, "60"), out animationFps))
+            {
+                animationFps = 60;
+            }
+            _config.AnimationFps = animationFps;
             _config.Volume = _volumeTrack.Value;
             _config.MouseVolume = _mouseVolumeTrack.Value;
             _config.KeyGainPercent = _keyGainTrack.Value;

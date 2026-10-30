@@ -129,6 +129,10 @@ $distAssets = Join-Path $dist "assets"
 if (Test-Path -LiteralPath $distAssets) {
     Write-Host "Updating existing dist assets in place."
 }
+$legacyIntro = Join-Path $distAssets "ui\startup-intro.mp4"
+if (Test-Path -LiteralPath $legacyIntro) {
+    Remove-Item -LiteralPath $legacyIntro -Force
+}
 Copy-Item -LiteralPath $assets -Destination $dist -Recurse -Force
 if ($SkipAssets) {
     Write-Host "Skipped jar extraction and copied the existing asset library."

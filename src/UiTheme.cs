@@ -26,6 +26,25 @@ namespace CreamyKeysDesktop
         public static readonly Color Warning = Color.FromArgb(246, 200, 95);
         public static readonly Color Danger = Color.FromArgb(255, 111, 97);
         public static readonly Color Focus = Color.FromArgb(113, 232, 188);
+        private static int _animationFps = 60;
+
+        public static bool ReducedMotion { get; set; }
+
+        public static int AnimationFps
+        {
+            get { return _animationFps; }
+            set { _animationFps = value == 30 || value == 120 ? value : 60; }
+        }
+
+        public static int AnimationInterval
+        {
+            get { return Math.Max(8, 1000 / Math.Max(1, _animationFps)); }
+        }
+
+        public static int IntervalForFps(int fps)
+        {
+            return Math.Max(8, 1000 / Math.Max(1, fps));
+        }
 
         public static Font DisplayFont(float size, FontStyle style)
         {
@@ -133,7 +152,12 @@ namespace CreamyKeysDesktop
         }
     }
 
-    internal sealed class ThemeButton : Button
+    internal interface IAnimationRateControl
+    {
+        void SetAnimationFps(int fps);
+    }
+
+    internal sealed class ThemeButton : Button, IAnimationRateControl
     {
         private readonly System.Windows.Forms.Timer _animationTimer;
         private float _hoverAmount;
@@ -153,10 +177,15 @@ namespace CreamyKeysDesktop
             Cursor = Cursors.Hand;
             TabStop = true;
             Height = 40;
-            _cornerRadius = 8;
+            _cornerRadius = 11;
             _animationTimer = new System.Windows.Forms.Timer();
-            _animationTimer.Interval = 16;
+            _animationTimer.Interval = UiTheme.AnimationInterval;
             _animationTimer.Tick += Animate;
+        }
+
+        public void SetAnimationFps(int fps)
+        {
+            _animationTimer.Interval = UiTheme.IntervalForFps(fps);
         }
 
         public bool Accent
@@ -181,7 +210,7 @@ namespace CreamyKeysDesktop
         {
             base.OnMouseEnter(e);
             _targetHover = 1.0f;
-            _animationTimer.Start();
+            UpdateHoverMotion();
         }
 
         protected override void OnMouseLeave(EventArgs e)
@@ -189,7 +218,7 @@ namespace CreamyKeysDesktop
             base.OnMouseLeave(e);
             _targetHover = 0.0f;
             _pressed = false;
-            _animationTimer.Start();
+            UpdateHoverMotion();
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -281,6 +310,13 @@ namespace CreamyKeysDesktop
 
         private void Animate(object sender, EventArgs e)
         {
+            if (UiTheme.ReducedMotion)
+            {
+                _hoverAmount = _targetHover;
+                _animationTimer.Stop();
+                Invalidate();
+                return;
+            }
             float distance = _targetHover - _hoverAmount;
             if (Math.Abs(distance) < 0.02f)
             {
@@ -293,9 +329,21 @@ namespace CreamyKeysDesktop
             }
             Invalidate();
         }
+
+        private void UpdateHoverMotion()
+        {
+            if (UiTheme.ReducedMotion)
+            {
+                _hoverAmount = _targetHover;
+                _animationTimer.Stop();
+                Invalidate();
+                return;
+            }
+            _animationTimer.Start();
+        }
     }
 
-    internal sealed class ThemeToggle : CheckBox
+    internal sealed class ThemeToggle : CheckBox, IAnimationRateControl
     {
         private readonly System.Windows.Forms.Timer _animationTimer;
         private float _visualValue;
@@ -317,8 +365,13 @@ namespace CreamyKeysDesktop
             Cursor = Cursors.Hand;
             BackColor = UiTheme.ContentElevated;
             _animationTimer = new System.Windows.Forms.Timer();
-            _animationTimer.Interval = 16;
+            _animationTimer.Interval = UiTheme.AnimationInterval;
             _animationTimer.Tick += Animate;
+        }
+
+        public void SetAnimationFps(int fps)
+        {
+            _animationTimer.Interval = UiTheme.IntervalForFps(fps);
         }
 
         public bool DarkSurface
@@ -335,9 +388,11 @@ namespace CreamyKeysDesktop
         protected override void OnCheckedChanged(EventArgs e)
         {
             _targetValue = Checked ? 1.0f : 0.0f;
-            if (!IsHandleCreated)
+            if (!IsHandleCreated || UiTheme.ReducedMotion)
             {
                 _visualValue = _targetValue;
+                _animationVelocity = 0.0f;
+                _animationTimer.Stop();
             }
             else
             {
@@ -389,9 +444,11 @@ namespace CreamyKeysDesktop
             }
 
             bool compact = string.IsNullOrWhiteSpace(Text);
+            bool narrow = !compact && Width < 140;
+            bool micro = narrow && Width <= 104;
             int trackWidth = compact
                 ? Math.Max(34, Math.Min(58, Width - 2))
-                : (Width < 140 ? 48 : 58);
+                : (micro ? 36 : (narrow ? 42 : 58));
             Rectangle track = new Rectangle(1, 3, trackWidth, 26);
             Color trackOff = _darkSurface
                 ? UiTheme.Blend(UiTheme.Border, UiTheme.SurfaceElevated, 0.34f)
@@ -422,7 +479,7 @@ namespace CreamyKeysDesktop
                 e.Graphics.DrawPath(trackBorder, trackPath);
             }
 
-            int knobWidth = compact && trackWidth < 50 ? 20 : 30;
+            int knobWidth = compact && trackWidth < 50 ? 20 : (micro ? 24 : (narrow ? 28 : 30));
             int travel = Math.Max(0, track.Width - knobWidth - 4);
             int knobX = track.X + 2 + (int)Math.Round(travel * _visualValue);
             int pressOffset = _pressed ? 1 : 0;
@@ -442,10 +499,10 @@ namespace CreamyKeysDesktop
                 e.Graphics.DrawPath(knobBorder, knobPath);
             }
 
-            if (!compact && knob.Width >= 28)
+            if (!compact && knob.Width >= 22)
             {
                 string state = Checked ? "ON" : "OFF";
-                using (Font stateFont = UiTheme.BodyFont(6.4f, FontStyle.Bold))
+                using (Font stateFont = UiTheme.BodyFont(micro ? 5.2f : 6.4f, FontStyle.Bold))
                 {
                     TextRenderer.DrawText(e.Graphics, state, stateFont, knob, UiTheme.Ink,
                         TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
@@ -453,8 +510,9 @@ namespace CreamyKeysDesktop
                 }
             }
 
-            Rectangle textBox = new Rectangle(track.Right + 12, 0,
-                Math.Max(1, Width - track.Right - 12), Height);
+            int textGap = micro ? 6 : (narrow ? 8 : 12);
+            Rectangle textBox = new Rectangle(track.Right + textGap, 0,
+                Math.Max(1, Width - track.Right - textGap), Height);
             TextRenderer.DrawText(e.Graphics, Text, Font, textBox, labelColor,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis |
                 TextFormatFlags.SingleLine);
@@ -481,7 +539,15 @@ namespace CreamyKeysDesktop
 
         private void Animate(object sender, EventArgs e)
         {
-            const float dt = 0.016f;
+            if (UiTheme.ReducedMotion)
+            {
+                _visualValue = _targetValue;
+                _animationVelocity = 0.0f;
+                _animationTimer.Stop();
+                Invalidate();
+                return;
+            }
+            float dt = _animationTimer.Interval / 1000.0f;
             const float stiffness = 520.0f;
             const float damping = 46.0f;
             float distance = _targetValue - _visualValue;
@@ -497,7 +563,7 @@ namespace CreamyKeysDesktop
         }
     }
 
-    internal sealed class SoundPulseControl : Control
+    internal sealed class SoundPulseControl : Control, IAnimationRateControl
     {
         private readonly System.Windows.Forms.Timer _timer;
         private readonly float[] _levels;
@@ -514,13 +580,25 @@ namespace CreamyKeysDesktop
             _levels = new float[30];
             _random = new Random();
             _timer = new System.Windows.Forms.Timer();
-            _timer.Interval = 33;
+            _timer.Interval = UiTheme.AnimationInterval;
             _timer.Tick += TickAnimation;
             _timer.Start();
         }
 
+        public void SetAnimationFps(int fps)
+        {
+            _timer.Interval = UiTheme.IntervalForFps(fps);
+        }
+
         public void Pulse(float strength)
         {
+            if (UiTheme.ReducedMotion)
+            {
+                _energy = 0.0f;
+                Array.Clear(_levels, 0, _levels.Length);
+                Invalidate();
+                return;
+            }
             _energy = Math.Max(_energy, Math.Max(0.25f, Math.Min(1.0f, strength)));
             for (int i = 0; i < _levels.Length; i++)
             {
@@ -569,6 +647,16 @@ namespace CreamyKeysDesktop
 
         private void TickAnimation(object sender, EventArgs e)
         {
+            if (UiTheme.ReducedMotion)
+            {
+                if (_energy > 0.0f)
+                {
+                    _energy = 0.0f;
+                    Array.Clear(_levels, 0, _levels.Length);
+                    Invalidate();
+                }
+                return;
+            }
             _phase += 0.13f;
             _energy *= 0.88f;
             for (int i = 0; i < _levels.Length; i++)
@@ -579,7 +667,7 @@ namespace CreamyKeysDesktop
         }
     }
 
-    internal sealed class SlidingIndicator : Control
+    internal sealed class SlidingIndicator : Control, IAnimationRateControl
     {
         private readonly System.Windows.Forms.Timer _timer;
         private int _targetTop;
@@ -596,8 +684,13 @@ namespace CreamyKeysDesktop
             Size = new Size(5, 24);
             _targetTop = Top;
             _timer = new System.Windows.Forms.Timer();
-            _timer.Interval = 16;
+            _timer.Interval = UiTheme.AnimationInterval;
             _timer.Tick += Animate;
+        }
+
+        public void SetAnimationFps(int fps)
+        {
+            _timer.Interval = UiTheme.IntervalForFps(fps);
         }
 
         public void MoveTo(int top, bool reducedMotion)
@@ -646,7 +739,7 @@ namespace CreamyKeysDesktop
 
         private void Animate(object sender, EventArgs e)
         {
-            const float dt = 0.016f;
+            float dt = _timer.Interval / 1000.0f;
             const float stiffness = 410.0f;
             const float damping = 41.0f;
             float distance = _targetTop - _visualTop;
@@ -664,53 +757,333 @@ namespace CreamyKeysDesktop
         }
     }
 
+    internal sealed class StartupCodeBackdrop : Control
+    {
+        private static readonly string[] SourceLines = new string[]
+        {
+            "using CreamyKeys.Audio;",
+            "var library = SoundLibrary.Scan(assets);",
+            "audio.Prepare(library.KeyboardPacks);",
+            "audio.Prepare(library.MousePacks);",
+            "keyboard.Connect(globalHook);",
+            "mouse.Connect(globalHook);",
+            "settings.Normalize();",
+            "workspace.RestoreLayout();",
+            "engine.SetVariation(volume, pitch);",
+            "engine.SetLayers(keyLayers, mouseLayers);",
+            "tray.RegisterQuickControls();",
+            "CreamyKeys.Open();"
+        };
+
+        private readonly System.Windows.Forms.Timer _timer;
+        private readonly System.Collections.Generic.List<string> _lines;
+        private readonly Font _codeFont;
+        private int _sourceIndex;
+        private int _characterIndex;
+        private int _ticks;
+        private float _lineOffset;
+
+        public event EventHandler CharacterTyped;
+
+        public StartupCodeBackdrop()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
+            BackColor = Color.FromArgb(12, 16, 14);
+            _lines = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < 6; i++)
+            {
+                _lines.Add(SourceLines[i]);
+            }
+            _sourceIndex = 6;
+            _codeFont = new Font("Cascadia Mono", 9.0f, FontStyle.Regular, GraphicsUnit.Point);
+            if (!string.Equals(_codeFont.Name, "Cascadia Mono", StringComparison.OrdinalIgnoreCase))
+            {
+                _codeFont.Dispose();
+                _codeFont = new Font("Consolas", 9.0f, FontStyle.Regular, GraphicsUnit.Point);
+            }
+            _timer = new System.Windows.Forms.Timer();
+            _timer.Interval = 16;
+            _timer.Tick += Animate;
+            _timer.Start();
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            int lineHeight = 24;
+            int baseline = Height - 34 + (int)Math.Round(_lineOffset);
+            using (SolidBrush numberBrush = new SolidBrush(Color.FromArgb(58, 126, 111, 102)))
+            using (SolidBrush codeBrush = new SolidBrush(Color.FromArgb(108, 141, 176, 157)))
+            using (SolidBrush accentBrush = new SolidBrush(Color.FromArgb(132, 80, 213, 164)))
+            {
+                int visible = Math.Min(_lines.Count, Math.Max(1, Height / lineHeight + 2));
+                for (int i = 0; i < visible; i++)
+                {
+                    int lineIndex = _lines.Count - visible + i;
+                    int y = baseline - ((_lines.Count - lineIndex) * lineHeight);
+                    if (y < -lineHeight || y > Height)
+                    {
+                        continue;
+                    }
+                    e.Graphics.DrawString((lineIndex + 1).ToString("00"), _codeFont,
+                        numberBrush, 24, y);
+                    e.Graphics.DrawString(_lines[lineIndex], _codeFont, codeBrush, 62, y);
+                }
+
+                string current = SourceLines[_sourceIndex].Substring(0,
+                    Math.Min(_characterIndex, SourceLines[_sourceIndex].Length));
+                int currentY = baseline - lineHeight;
+                e.Graphics.DrawString((_lines.Count + 1).ToString("00"), _codeFont,
+                    numberBrush, 24, currentY);
+                e.Graphics.DrawString(current + ((_ticks / 22) % 2 == 0 ? "|" : ""),
+                    _codeFont, accentBrush, 62, currentY);
+            }
+
+            using (LinearGradientBrush fade = new LinearGradientBrush(ClientRectangle,
+                Color.FromArgb(224, BackColor), Color.FromArgb(30, BackColor),
+                LinearGradientMode.Vertical))
+            {
+                ColorBlend blend = new ColorBlend();
+                blend.Positions = new float[] { 0.0f, 0.34f, 0.72f, 1.0f };
+                blend.Colors = new Color[]
+                {
+                    Color.FromArgb(235, BackColor), Color.FromArgb(110, BackColor),
+                    Color.FromArgb(54, BackColor), Color.FromArgb(220, BackColor)
+                };
+                fade.InterpolationColors = blend;
+                e.Graphics.FillRectangle(fade, ClientRectangle);
+            }
+
+            Rectangle loadingSurface = new Rectangle(24, Math.Max(20, Height - 190),
+                Math.Max(40, Width - 48), 166);
+            using (GraphicsPath surfacePath = UiTheme.RoundedRect(loadingSurface, 12))
+            using (SolidBrush surfaceBrush = new SolidBrush(Color.FromArgb(238, 12, 16, 14)))
+            using (Pen surfaceBorder = new Pen(Color.FromArgb(52, 67, 59), 1.0f))
+            {
+                e.Graphics.FillPath(surfaceBrush, surfacePath);
+                e.Graphics.DrawPath(surfaceBorder, surfacePath);
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _timer.Stop();
+                _timer.Dispose();
+                _codeFont.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void Animate(object sender, EventArgs e)
+        {
+            _ticks++;
+            if (_ticks % 2 == 0)
+            {
+                _characterIndex++;
+                EventHandler typed = CharacterTyped;
+                if (typed != null)
+                {
+                    typed(this, EventArgs.Empty);
+                }
+                if (_characterIndex > SourceLines[_sourceIndex].Length + 5)
+                {
+                    _lines.Add(SourceLines[_sourceIndex]);
+                    if (_lines.Count > 22)
+                    {
+                        _lines.RemoveAt(0);
+                    }
+                    _sourceIndex = (_sourceIndex + 1) % SourceLines.Length;
+                    _characterIndex = 0;
+                    _lineOffset = 18.0f;
+                }
+            }
+            _lineOffset *= 0.78f;
+            Invalidate();
+        }
+    }
+
+    internal sealed class SegmentedLoadingBar : Control
+    {
+        private readonly System.Windows.Forms.Timer _timer;
+        private float _visualValue;
+        private float _targetValue;
+        private float _velocity;
+
+        public SegmentedLoadingBar()
+        {
+            SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                ControlStyles.OptimizedDoubleBuffer | ControlStyles.Opaque, true);
+            BackColor = Color.FromArgb(12, 16, 14);
+            _timer = new System.Windows.Forms.Timer();
+            _timer.Interval = 16;
+            _timer.Tick += Animate;
+        }
+
+        public int Value
+        {
+            get { return (int)Math.Round(_targetValue * 100.0f); }
+            set
+            {
+                _targetValue = Math.Max(0.0f, Math.Min(1.0f, value / 100.0f));
+                _timer.Start();
+                Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            e.Graphics.Clear(BackColor);
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            int percentWidth = 70;
+            Rectangle track = new Rectangle(percentWidth, 9,
+                Math.Max(20, Width - percentWidth - 2), Math.Max(12, Height - 18));
+            using (Font percentFont = UiTheme.BodyFont(9.0f, FontStyle.Bold))
+            {
+                TextRenderer.DrawText(e.Graphics,
+                    ((int)Math.Round(_visualValue * 100.0f)).ToString() + "%",
+                    percentFont, new Rectangle(0, 0, percentWidth - 8, Height),
+                    UiTheme.TextPrimary, TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
+                    TextFormatFlags.SingleLine);
+            }
+
+            using (GraphicsPath trackPath = UiTheme.RoundedRect(track, track.Height / 2))
+            using (SolidBrush trackBrush = new SolidBrush(Color.FromArgb(34, 45, 40)))
+            using (Pen border = new Pen(Color.FromArgb(62, 78, 69)))
+            {
+                e.Graphics.FillPath(trackBrush, trackPath);
+                e.Graphics.DrawPath(border, trackPath);
+            }
+
+            int filledWidth = (int)Math.Round((track.Width - 4) * _visualValue);
+            if (filledWidth <= 2)
+            {
+                return;
+            }
+            Rectangle fillBounds = new Rectangle(track.X + 2, track.Y + 2,
+                filledWidth, track.Height - 4);
+            GraphicsState state = e.Graphics.Save();
+            using (GraphicsPath clip = UiTheme.RoundedRect(
+                new Rectangle(track.X + 2, track.Y + 2, track.Width - 4, track.Height - 4),
+                Math.Max(2, (track.Height - 4) / 2)))
+            {
+                e.Graphics.SetClip(clip);
+                int segment = 22;
+                for (int x = fillBounds.X - segment; x < fillBounds.Right + segment; x += segment)
+                {
+                    GraphicsPath stripe = new GraphicsPath();
+                    stripe.AddPolygon(new Point[]
+                    {
+                        new Point(x + 8, fillBounds.Y),
+                        new Point(x + segment, fillBounds.Y),
+                        new Point(x + segment - 8, fillBounds.Bottom),
+                        new Point(x - 1, fillBounds.Bottom)
+                    });
+                    float t = Math.Max(0.0f, Math.Min(1.0f,
+                        (x - fillBounds.X) / (float)Math.Max(1, track.Width)));
+                    Color color = UiTheme.Blend(Color.FromArgb(41, 190, 222), UiTheme.Action, t);
+                    using (SolidBrush brush = new SolidBrush(color))
+                    {
+                        e.Graphics.FillPath(brush, stripe);
+                    }
+                    stripe.Dispose();
+                }
+            }
+            e.Graphics.Restore(state);
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _timer.Stop();
+                _timer.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private void Animate(object sender, EventArgs e)
+        {
+            float dt = _timer.Interval / 1000.0f;
+            const float stiffness = 310.0f;
+            const float damping = 35.0f;
+            float distance = _targetValue - _visualValue;
+            _velocity += (stiffness * distance - damping * _velocity) * dt;
+            _visualValue += _velocity * dt;
+            if (Math.Abs(distance) < 0.001f && Math.Abs(_velocity) < 0.01f)
+            {
+                _visualValue = _targetValue;
+                _velocity = 0.0f;
+                _timer.Stop();
+            }
+            Invalidate();
+        }
+    }
+
     internal sealed class SplashForm : Form
     {
         private readonly Label _stageLabel;
-        private readonly SoundPulseControl _pulse;
+        private readonly SegmentedLoadingBar _progress;
+        private readonly System.Media.SoundPlayer _typingSound;
+        private int _typedCharacters;
 
         public SplashForm()
         {
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             ShowInTaskbar = false;
-            ClientSize = new Size(520, 312);
-            BackColor = UiTheme.Canvas;
+            ClientSize = new Size(780, 440);
+            BackColor = Color.FromArgb(12, 16, 14);
             Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
             AutoScaleMode = AutoScaleMode.Dpi;
             DoubleBuffered = true;
 
+            StartupCodeBackdrop code = new StartupCodeBackdrop();
+            code.Dock = DockStyle.Fill;
+            code.CharacterTyped += OnCharacterTyped;
+            Controls.Add(code);
+
             PictureBox mark = new PictureBox();
             mark.Image = LoadExecutableIcon();
             mark.SizeMode = PictureBoxSizeMode.Zoom;
-            mark.SetBounds(36, 34, 50, 50);
-            Controls.Add(mark);
+            mark.BackColor = Color.Transparent;
+            mark.SetBounds(44, 274, 52, 52);
+            code.Controls.Add(mark);
 
             Label title = new Label();
-            title.Text = "CreamyKeys";
+            title.Text = "CreamKey";
             title.ForeColor = UiTheme.TextPrimary;
-            title.Font = UiTheme.DisplayFont(21.0f, FontStyle.Bold);
+            title.BackColor = Color.Transparent;
+            title.Font = UiTheme.DisplayFont(20.0f, FontStyle.Bold);
             title.UseCompatibleTextRendering = true;
             title.TextAlign = ContentAlignment.MiddleLeft;
-            title.SetBounds(104, 20, 360, 62);
-            Controls.Add(title);
-
-            Label subtitle = new Label();
-            subtitle.Text = "Desktop sound studio";
-            subtitle.ForeColor = UiTheme.TextMuted;
-            subtitle.SetBounds(106, 78, 320, 28);
-            Controls.Add(subtitle);
-
-            _pulse = new SoundPulseControl();
-            _pulse.SetBounds(36, 130, 448, 72);
-            Controls.Add(_pulse);
+            title.SetBounds(112, 268, 360, 58);
+            code.Controls.Add(title);
 
             _stageLabel = new Label();
             _stageLabel.Text = "Loading sound library";
             _stageLabel.ForeColor = UiTheme.TextMuted;
+            _stageLabel.BackColor = Color.Transparent;
             _stageLabel.TextAlign = ContentAlignment.MiddleLeft;
-            _stageLabel.SetBounds(36, 232, 448, 34);
-            Controls.Add(_stageLabel);
+            _stageLabel.SetBounds(44, 328, 692, 28);
+            code.Controls.Add(_stageLabel);
+
+            _progress = new SegmentedLoadingBar();
+            _progress.SetBounds(44, 362, 692, 46);
+            _progress.Value = 7;
+            code.Controls.Add(_progress);
+
+            string soundPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
+                "assets", "keyboards", "cherrymx_black_abs", "key_01.wav");
+            if (File.Exists(soundPath))
+            {
+                _typingSound = new System.Media.SoundPlayer(soundPath);
+                try { _typingSound.LoadAsync(); } catch { }
+            }
         }
 
         private static Image LoadExecutableIcon()
@@ -733,8 +1106,13 @@ namespace CreamyKeysDesktop
 
         public void SetStage(string stage)
         {
+            SetStage(stage, _progress.Value);
+        }
+
+        public void SetStage(string stage, int progress)
+        {
             _stageLabel.Text = stage;
-            _pulse.Pulse(0.75f);
+            _progress.Value = progress;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -745,151 +1123,30 @@ namespace CreamyKeysDesktop
             {
                 e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
             }
-            using (SolidBrush brush = new SolidBrush(UiTheme.Action))
+            using (SolidBrush brush = new SolidBrush(Color.FromArgb(12, 16, 14)))
             {
-                e.Graphics.FillRectangle(brush, 36, 284, 94, 3);
-            }
-        }
-    }
-
-    internal sealed class StartupTrailerForm : Form
-    {
-        private readonly System.Windows.Controls.MediaElement _media;
-        private readonly Label _stageLabel;
-        private bool _completionRaised;
-        private bool _failureRaised;
-
-        public event EventHandler Finished;
-        public event EventHandler PlaybackFailed;
-
-        public StartupTrailerForm(string videoPath)
-        {
-            FormBorderStyle = FormBorderStyle.None;
-            StartPosition = FormStartPosition.CenterScreen;
-            ShowInTaskbar = false;
-            KeyPreview = true;
-            ClientSize = new Size(960, 600);
-            MinimumSize = ClientSize;
-            MaximumSize = ClientSize;
-            BackColor = UiTheme.Canvas;
-            AutoScaleMode = AutoScaleMode.Dpi;
-            Font = UiTheme.BodyFont(9.0f, FontStyle.Regular);
-
-            System.Windows.Forms.Integration.ElementHost mediaHost =
-                new System.Windows.Forms.Integration.ElementHost();
-            mediaHost.SetBounds(0, 0, 960, 540);
-            mediaHost.BackColor = UiTheme.Canvas;
-
-            System.Windows.Controls.Grid mediaSurface = new System.Windows.Controls.Grid();
-            mediaSurface.Background = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(17, 20, 18));
-            _media = new System.Windows.Controls.MediaElement();
-            _media.LoadedBehavior = System.Windows.Controls.MediaState.Manual;
-            _media.UnloadedBehavior = System.Windows.Controls.MediaState.Stop;
-            _media.Stretch = System.Windows.Media.Stretch.Uniform;
-            _media.Volume = 0.72;
-            _media.ScrubbingEnabled = true;
-            _media.Source = new Uri(videoPath, UriKind.Absolute);
-            _media.MediaEnded += delegate { RaiseFinished(); };
-            _media.MediaFailed += delegate { RaisePlaybackFailed(); };
-            mediaSurface.Children.Add(_media);
-            mediaHost.Child = mediaSurface;
-            Controls.Add(mediaHost);
-
-            Panel footer = new Panel();
-            footer.BackColor = UiTheme.Surface;
-            footer.SetBounds(0, 540, 960, 60);
-            Controls.Add(footer);
-
-            _stageLabel = new Label();
-            _stageLabel.Text = "Loading sound library";
-            _stageLabel.ForeColor = UiTheme.TextMuted;
-            _stageLabel.TextAlign = ContentAlignment.MiddleLeft;
-            _stageLabel.SetBounds(24, 12, 690, 36);
-            footer.Controls.Add(_stageLabel);
-
-            ThemeButton skip = new ThemeButton();
-            skip.Text = "Skip intro";
-            skip.SetBounds(808, 10, 128, 40);
-            skip.Click += delegate { RaiseFinished(); };
-            footer.Controls.Add(skip);
-
-            KeyDown += delegate(object sender, KeyEventArgs e)
-            {
-                if (e.KeyCode == Keys.Escape)
-                {
-                    RaiseFinished();
-                    e.Handled = true;
-                }
-            };
-            Shown += delegate
-            {
-                BeginInvoke((MethodInvoker)delegate
-                {
-                    try
-                    {
-                        _media.Play();
-                    }
-                    catch
-                    {
-                        RaisePlaybackFailed();
-                    }
-                });
-            };
-        }
-
-        public void SetStage(string stage)
-        {
-            _stageLabel.Text = stage;
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            base.OnPaint(e);
-            using (Pen border = new Pen(UiTheme.Border, 1.0f))
-            {
-                e.Graphics.DrawRectangle(border, 0, 0, Width - 1, Height - 1);
+                e.Graphics.FillRectangle(brush, 0, 0, 1, 1);
             }
         }
 
-        protected override void OnFormClosed(FormClosedEventArgs e)
+        protected override void Dispose(bool disposing)
         {
-            try
+            if (disposing && _typingSound != null)
             {
-                _media.Stop();
+                _typingSound.Stop();
+                _typingSound.Dispose();
             }
-            catch
-            {
-            }
-            base.OnFormClosed(e);
+            base.Dispose(disposing);
         }
 
-        private void RaiseFinished()
+        private void OnCharacterTyped(object sender, EventArgs e)
         {
-            if (_completionRaised)
+            _typedCharacters++;
+            if (_typingSound == null || _typedCharacters % 4 != 0)
             {
                 return;
             }
-            _completionRaised = true;
-            EventHandler handler = Finished;
-            if (handler != null)
-            {
-                handler(this, EventArgs.Empty);
-            }
-        }
-
-        private void RaisePlaybackFailed()
-        {
-            if (_failureRaised)
-            {
-                return;
-            }
-            _failureRaised = true;
-            EventHandler handler = PlaybackFailed;
-            if (handler != null)
-            {
-                handler(this, EventArgs.Empty);
-            }
+            try { _typingSound.Play(); } catch { }
         }
     }
 
@@ -898,12 +1155,9 @@ namespace CreamyKeysDesktop
         private readonly EventWaitHandle _activationEvent;
         private readonly System.Windows.Forms.Timer _timer;
         private readonly System.Windows.Forms.Timer _activationTimer;
-        private Form _startupForm;
         private SplashForm _splash;
-        private StartupTrailerForm _trailer;
         private MainForm _main;
         private int _ticks;
-        private bool _trailerFinished;
         private bool _mainShown;
         private bool _activationPending;
 
@@ -925,13 +1179,17 @@ namespace CreamyKeysDesktop
         private void Advance(object sender, EventArgs e)
         {
             _ticks++;
-            if (_ticks == 4)
+            if (_ticks == 3)
             {
-                SetStage("Preparing audio engine");
+                SetStage("Scanning sound packs", 24);
+            }
+            else if (_ticks == 6)
+            {
+                SetStage("Preparing audio engine", 43);
             }
             else if (_ticks == 9)
             {
-                SetStage("Connecting keyboard and mouse");
+                SetStage("Connecting keyboard and mouse", 66);
                 try
                 {
                     _main = new MainForm();
@@ -945,12 +1203,15 @@ namespace CreamyKeysDesktop
                     ExitThread();
                 }
             }
-            else if (_ticks == 16 && _main != null)
+            else if (_ticks == 13 && _main != null)
             {
-                SetStage("Opening workspace");
+                SetStage("Opening workspace", 88);
             }
-            else if (_ticks >= 20 && _main != null &&
-                (_trailer == null || _trailerFinished || _ticks >= 180))
+            else if (_ticks == 17 && _main != null)
+            {
+                SetStage("Ready", 100);
+            }
+            else if (_ticks >= 20 && _main != null)
             {
                 FinishStartup();
             }
@@ -958,60 +1219,15 @@ namespace CreamyKeysDesktop
 
         private void ShowStartupPresentation()
         {
-            string videoPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory,
-                "assets", "ui", "startup-intro.mp4");
-            if (File.Exists(videoPath))
-            {
-                try
-                {
-                    _trailer = new StartupTrailerForm(videoPath);
-                    _trailer.Finished += delegate
-                    {
-                        _trailerFinished = true;
-                        if (_main != null && _ticks >= 20)
-                        {
-                            FinishStartup();
-                        }
-                    };
-                    _trailer.PlaybackFailed += delegate { SwitchToFallbackSplash(); };
-                    _startupForm = _trailer;
-                    _startupForm.Show();
-                    return;
-                }
-                catch
-                {
-                    _trailer = null;
-                }
-            }
-
-            SwitchToFallbackSplash();
-        }
-
-        private void SwitchToFallbackSplash()
-        {
-            if (_mainShown)
-            {
-                return;
-            }
-            if (_startupForm != null && !_startupForm.IsDisposed)
-            {
-                _startupForm.Close();
-            }
-            _trailer = null;
             _splash = new SplashForm();
-            _startupForm = _splash;
             _splash.Show();
         }
 
-        private void SetStage(string stage)
+        private void SetStage(string stage, int progress)
         {
-            if (_trailer != null && !_trailer.IsDisposed)
+            if (_splash != null && !_splash.IsDisposed)
             {
-                _trailer.SetStage(stage);
-            }
-            else if (_splash != null && !_splash.IsDisposed)
-            {
-                _splash.SetStage(stage);
+                _splash.SetStage(stage, progress);
             }
         }
 
@@ -1037,11 +1253,11 @@ namespace CreamyKeysDesktop
 
         private void CloseStartupPresentation()
         {
-            if (_startupForm != null && !_startupForm.IsDisposed)
+            if (_splash != null && !_splash.IsDisposed)
             {
-                _startupForm.Close();
+                _splash.Close();
             }
-            _startupForm = null;
+            _splash = null;
         }
 
         private void CheckActivationRequest(object sender, EventArgs e)
@@ -1135,28 +1351,6 @@ namespace CreamyKeysDesktop
             };
             _media.MediaFailed += delegate { ShowPosterFallback(); };
             root.Children.Add(_media);
-
-            System.Windows.Controls.Border badge = new System.Windows.Controls.Border();
-            badge.HorizontalAlignment = System.Windows.HorizontalAlignment.Right;
-            badge.VerticalAlignment = System.Windows.VerticalAlignment.Top;
-            badge.Margin = new System.Windows.Thickness(0, 16, 16, 0);
-            badge.Padding = new System.Windows.Thickness(10, 5, 10, 5);
-            badge.CornerRadius = new System.Windows.CornerRadius(7);
-            badge.Background = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromArgb(220, 27, 32, 29));
-            badge.BorderBrush = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(80, 213, 164));
-            badge.BorderThickness = new System.Windows.Thickness(1);
-
-            System.Windows.Controls.TextBlock badgeText = new System.Windows.Controls.TextBlock();
-            badgeText.Text = "1080P  /  LOOP";
-            badgeText.Foreground = new System.Windows.Media.SolidColorBrush(
-                System.Windows.Media.Color.FromRgb(247, 249, 248));
-            badgeText.FontFamily = new System.Windows.Media.FontFamily("Segoe UI Variable Text");
-            badgeText.FontSize = 11.0;
-            badgeText.FontWeight = System.Windows.FontWeights.SemiBold;
-            badge.Child = badgeText;
-            root.Children.Add(badge);
 
             _mediaHost.Child = root;
             Controls.Add(_mediaHost);
@@ -1290,7 +1484,7 @@ namespace CreamyKeysDesktop
 
         public WelcomeForm(Icon icon, EventHandler testSound)
         {
-            Text = "Welcome to CreamyKeys";
+            Text = "CreamyKeys Trailer";
             StartPosition = FormStartPosition.CenterParent;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -1317,13 +1511,13 @@ namespace CreamyKeysDesktop
             Controls.Add(brand);
 
             Label brandCaption = new Label();
-            brandCaption.Text = "Welcome  /  desktop sound studio";
+            brandCaption.Text = "Trailer  /  desktop sound studio";
             brandCaption.ForeColor = UiTheme.TextMuted;
             brandCaption.SetBounds(86, 42, 340, 24);
             Controls.Add(brandCaption);
 
             Label live = new Label();
-            live.Text = "●  PRODUCT TOUR";
+            live.Text = "●  TRAILER";
             live.ForeColor = UiTheme.Action;
             live.Font = UiTheme.BodyFont(8.2f, FontStyle.Bold);
             live.TextAlign = ContentAlignment.MiddleRight;
@@ -1338,7 +1532,7 @@ namespace CreamyKeysDesktop
             Controls.Add(_trailer);
 
             Label trailerCaption = new Label();
-            trailerCaption.Text = "1080P PRODUCT TOUR  /  LOOPS WHILE WELCOME IS OPEN";
+            trailerCaption.Text = "CREAMYKEYS TRAILER";
             trailerCaption.ForeColor = UiTheme.TextMuted;
             trailerCaption.Font = UiTheme.BodyFont(7.8f, FontStyle.Bold);
             trailerCaption.SetBounds(28, 466, 620, 24);
@@ -1486,14 +1680,14 @@ namespace CreamyKeysDesktop
             "Sound library",
             "Behavior",
             "Allowed apps",
-            "Tray and settings"
+            "Settings and tray"
         };
 
         private static readonly string[] SectionSubtitles =
         {
             "Get CreamyKeys running in less than a minute.",
             "Choose keyboard and mouse character independently.",
-            "Tune repeat handling, layers and motion.",
+            "Tune repeat handling, layers and input rules.",
             "Limit sound playback to the apps you choose.",
             "Keep CreamyKeys handy without keeping the window open."
         };
@@ -1502,9 +1696,9 @@ namespace CreamyKeysDesktop
         {
             "1. Open Sound library and choose a keyboard pack.\n\n2. Choose a separate mouse pack and set both volume controls.\n\n3. Press Test sound, then type or click anywhere.\n\n4. Press Save settings when the result feels right.",
             "Keyboard and mouse use separate shuffled sample pools. Volume variation and pitch variation make repeated input sound less mechanical. Key layers and mouse layers can play several samples together; start with one layer, then increase gradually.",
-            "Held key repeat controls whether holding a key continues to make sound. Shift / Ctrl / Alt includes modifier keys. Ignore injected input prevents most synthetic keystrokes from triggering audio. Reduce animations keeps the interface still while preserving every feature.",
+            "Held key repeat controls whether holding a key continues to make sound. Shift / Ctrl / Alt includes modifier keys. Ignore injected input prevents most synthetic keystrokes from triggering audio. Use the + tile on Dashboard to add a physical key to the custom virtual row.",
             "Turn on Use app allow list, press Scan apps, then tick the apps that may trigger CreamyKeys. Add current captures the foreground app. You can still enter an executable name manually when an app is not discovered automatically.",
-            "Hide sends the main window to the notification area. Click the CreamyKeys tray icon to open quick controls. Import settings restores a JSON settings file; Export settings creates one you can move to another computer. Welcome pop-up can be enabled again from Behavior."
+            "Hide sends the main window to the notification area. Click the CreamyKeys tray icon to open quick controls. Settings contains animation FPS, reduced motion, Trailer startup, JSON import/export, the user guide and the config folder."
         };
 
         public UserGuideForm(Icon icon)

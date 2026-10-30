@@ -13,15 +13,15 @@ Download the latest portable build from the GitHub Releases page:
 
 Extract the zip, then run `CreamyKeys.exe`.
 
-Watch the 18-second 1080p product trailer from the latest Release. The same trailer now loops inside the welcome pop-up, starts muted, and can be unmuted without leaving onboarding:
+Watch the product trailer from the latest Release. The same video loops only inside the in-app **Trailer**, starts muted, and can be unmuted without leaving onboarding:
 
-- `CreamyKeys-trailer-v1.4.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
+- `CreamyKeys-trailer-v1.5.0.mp4` - interface preview with native CreamyKeys key and mouse sounds
 
 ## Quick Start
 
 1. Run `CreamyKeys.exe`.
-2. Follow the welcome pop-up, or reopen it later from **Welcome pop-up** in the sidebar.
-3. Open the **Sound library** page and make sure **App enabled**, **Keyboard sound**, and **Mouse sound** are enabled.
+2. Follow the optional **Trailer**, or reopen it later from the sidebar.
+3. On **Dashboard**, enable **Keyboard sound** and the mouse overlay, then open **Sound library** and make sure **App enabled** and **Mouse sound** are enabled.
 4. Pick keyboard and mouse presets, adjust **Keyboard volume**, **Mouse volume**, and **Key boost**, then press **Test sound**.
 5. Open **Dashboard** to see the virtual keyboard and mouse.
 6. Press **Save settings** after changing settings.
@@ -39,8 +39,8 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - CreamyKeys sound presets extracted from the Minecraft mod assets.
 - Volume and pitch variation on every trigger for a less static sound.
 - Tray menu with settings, enable/disable, test sound, startup, admin, and exit actions.
-- Six-second startup trailer with Skip/Escape controls, a native fallback loading screen, and an optional welcome pop-up with a looping 1080p product tour, static poster fallback, built-in guide, and live curved sound waveform.
-- Critically damped, interruptible page transitions inspired by Animate UI and Apple fluid-interface principles, plus immediate press feedback and a reduced-motion option.
+- Native startup loading screen with a typed-code background, quiet key feedback, real initialization stages, and a segmented determinate progress bar.
+- Lightweight page switching with a critically damped navigation marker, immediate press feedback, selectable 30/60/120 FPS motion, and a reduced-motion option.
 - Single-instance activation: opening `CreamyKeys.exe` again restores the existing GUI instead of showing another process or warning.
 - Virtual keyboard that lights up when you press physical keys.
 - Virtual mouse that lights up when you click physical mouse buttons.
@@ -48,6 +48,7 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - Mouse styles: office, gaming, and compact.
 - Auto-detect option to choose a matching keyboard and mouse style from Windows device names.
 - Per-key and per-button customization in edit mode or by right-clicking a virtual button.
+- Add custom virtual keys with the `+` tile, press the physical key to identify it, and remove it from the right-click menu after confirmation.
 - Custom label, icon text, position offset, and custom `.wav` sound for each virtual key/button.
 - Keyboard volume, mouse volume, key boost, variation, cooldown, and max voice controls.
 - Behavior settings for held key repeat, modifier keys, injected input, and startup.
@@ -57,11 +58,23 @@ If a game runs as administrator, run CreamyKeys as administrator too.
 - Import and export complete settings as a portable JSON file.
 - Lucide interface icons, selected from a set supported by Morphicons and bundled under the ISC license.
 
+## Interface
+
+| Compact dashboard | Settings |
+| --- | --- |
+| ![Compact CreamyKeys dashboard](docs/screenshots/dashboard-compact.png) | ![CreamyKeys settings](docs/screenshots/settings.png) |
+
+| Trailer | Startup loading |
+| --- | --- |
+| ![CreamyKeys trailer](docs/screenshots/welcome.png) | ![CreamyKeys startup loading](docs/screenshots/loading.png) |
+
 ## Pages
 
 ### Dashboard
 
-The Dashboard is the main view. It shows the virtual keyboard and, when enabled, the virtual mouse. You can select the keyboard layout and mouse style from the compact controls at the top.
+The Dashboard is the main view. It shows the virtual keyboard and, when enabled, the virtual mouse. You can select the keyboard layout and mouse style, enable keyboard sound, and show or hide the mouse overlay from the compact controls at the top.
+
+Use the `+` tile below the keyboard to add another virtual key. CreamyKeys waits for a physical key press, names the new key, and adds it to the custom row. Right-click a custom key and choose **Delete key** to remove it; a confirmation dialog prevents accidental deletion.
 
 Use **Auto detect** to let CreamyKeys choose the closest layout automatically.
 
@@ -70,9 +83,7 @@ Use **Auto detect** to let CreamyKeys choose the closest layout automatically.
 Sound settings live here:
 
 - **App enabled** turns the whole app on or off.
-- **Keyboard sound** enables key sounds.
 - **Mouse sound** enables mouse sounds.
-- **Show virtual mouse** shows or hides the virtual mouse.
 - **Keyboard preset** selects the sound pack used by keyboard presses.
 - **Mouse preset** selects the secondary sound pack used by mouse clicks.
 - **Keyboard volume** controls keyboard sample volume.
@@ -93,8 +104,16 @@ Use this page to tune how input is handled:
 - **Cooldown** limits how quickly repeated sounds can fire.
 - **Max voices** limits overlapping sounds.
 - **Keyboard layers** and **Mouse layers** stack 1-16 random samples per input, like the mod's amplify controls.
-- **Reduce animations** keeps navigation immediate and disables decorative transitions.
-- **Welcome pop-up** controls whether the welcome screen appears at startup.
+
+### Settings
+
+Secondary controls live here:
+
+- **Animation FPS** selects 30, 60, or 120 FPS for native motion. 60 FPS is recommended.
+- **Reduce animations** removes non-essential motion while keeping every feature available.
+- **Trailer on startup** controls whether the trailer opens after startup.
+- **Import settings** and **Export settings** move the complete configuration between computers.
+- **Trailer**, **User guide**, and **Open config folder** keep support actions in one place.
 
 ### Allowed Apps
 
@@ -124,15 +143,15 @@ Double-click the tray icon to show the main window again.
 
 ## Import And Export Settings
 
-Use **Export settings** in the sidebar to save the complete current configuration as JSON. The export includes sound packs, volume, behavior, virtual-device options, app rules, and per-button overrides.
+Use **Export settings** on the Settings page to save the complete current configuration as JSON. The export includes sound packs, volume, behavior, virtual-device options, app rules, animation preferences, and per-button overrides.
 
 Use **Import settings** to load that file on another computer or restore a previous setup. CreamyKeys validates and migrates older configuration versions before applying them.
 
 After importing, review the selected sound packs if the destination computer has a different `assets` folder.
 
-## Welcome Pop-up And User Guide
+## Trailer And User Guide
 
-The welcome pop-up uses the CreamyKeys app icon, loops the bundled 1080p product tour, and includes separate **Trailer sound** and **Do not show again** switches. The trailer starts muted and falls back to a branded poster if Windows cannot decode it. You can re-enable the welcome pop-up at any time from **Behavior > Welcome pop-up**.
+The Trailer uses the CreamyKeys app icon, loops the bundled product video, and includes separate **Trailer sound** and **Do not show again** switches. It starts muted and falls back to a branded poster if Windows cannot decode it. Re-enable it at any time from **Settings > Trailer on startup**.
 
 Open **User guide** in the sidebar for in-app instructions covering quick start, sound variation, behavior, allowed apps, tray controls, and settings transfer.
 

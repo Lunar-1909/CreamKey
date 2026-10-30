@@ -1,20 +1,20 @@
-# CreamyKeys v1.4.0
+# CreamyKeys v1.5.0
 
-Welcome video, fluid controls, and final layout polish.
+Faster motion, native startup loading, and custom virtual keys.
 
 ## Highlights
 
-- Added the full 18-second 1080p CreamyKeys product tour directly to the Welcome pop-up. It loops while Welcome is open, starts muted, and has a dedicated sound toggle.
-- Added a branded poster fallback so Welcome never shows an empty video area while Media Foundation starts or when a codec is unavailable.
-- Rebuilt page, toggle, navigation-marker, and slider motion with interruptible, critically damped springs and immediate pointer-down feedback.
-- Fixed small-window clipping for the Dashboard `Edit` and `Auto` controls and removed stray hidden-tab text from the Behavior page.
-- Kept the virtual keyboard and mouse centered from measured bounds at compact and maximized sizes.
-- Preserved the installed-app scanner, application logos, search, foreground-app capture, import/export, user guide, layered sound variation, and reduced-motion mode.
-- Launching `CreamyKeys.exe` while CreamyKeys is already running now activates the existing window.
-- Retained one privacy-safe `NTGH` signature in the identity rail and removed personal author names from the interface and public documentation.
+- Replaced the startup intro video with a native typed-code loading screen, quiet key feedback, real initialization stages, and a segmented progress bar.
+- Kept video exclusively inside Trailer and removed the technical resolution/loop badges.
+- Removed full-page bitmap transition capture, making navigation immediate while the sidebar marker continues to move with a critical spring.
+- Added a Settings page with 30/60/120 FPS, reduced motion, Trailer startup, import/export, guide, and config-folder controls.
+- Moved keyboard sound and mouse-overlay controls to Dashboard and fixed compact-window toggle clipping.
+- Added a custom-key row below the virtual keyboard. Press `+`, type a physical key, then customize or delete it from the right-click menu.
+- Softened keyboard corners and shadows, rounded the persistent action bar, and tightened Sound/Settings layouts for the minimum window size.
+- Preserved the installed-app scanner, application logos, search, foreground-app capture, layered sound variation, tray controls, and single-instance activation.
 
 ## Download
 
-Download `CreamyKeys-portable-v1.4.0.zip`, extract it, and run `CreamyKeys.exe`. A standalone executable and the product trailer are also attached for convenience.
+Download `CreamyKeys-portable-v1.5.0.zip`, extract it, and run `CreamyKeys.exe`. A standalone executable and the product trailer are also attached for convenience.
 
 Run as administrator when using CreamyKeys with elevated games.

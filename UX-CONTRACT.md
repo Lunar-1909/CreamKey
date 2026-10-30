@@ -70,9 +70,9 @@
 
 ## Async and resilience
 
-- Startup presents the bundled six-second trailer with `Skip intro` and Escape; playback failure falls back to the native staged splash.
-- Welcome presents the bundled 18-second 1080p product tour in a continuous muted loop. `Trailer sound` is opt-in for the current dialog, and media failure preserves the same geometry with a branded poster.
-- Startup loading is determinate by named stages, not a fake percentage.
+- Startup presents a native typed-code loading surface with quiet key feedback and a segmented determinate progress bar.
+- Trailer presents the bundled product tour in a continuous muted loop. `Trailer sound` is opt-in for the current dialog, and media failure preserves the same geometry with a branded poster.
+- Startup loading advances through named initialization stages and reaches 100% only after the workspace has been created.
 - Very fast work avoids flashing the overlay.
 - Import is pessimistic: validate and normalize a temporary config before applying it.
 - Export writes only to the user-selected path and does not alter the active config.

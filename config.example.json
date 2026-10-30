@@ -1,5 +1,5 @@
 {
-  "ConfigVersion": 8,
+  "ConfigVersion": 10,
   "Enabled": true,
   "KeyboardSoundsEnabled": true,
   "Preset": "cherrymx_blue_abs",
@@ -26,6 +26,7 @@
   "ReducedMotion": false,
   "HasCompletedWelcome": false,
   "ShowWelcomeOnStartup": true,
+  "AnimationFps": 60,
   "UseAppAllowList": false,
   "AllowedProcesses": [
     "explorer.exe",
